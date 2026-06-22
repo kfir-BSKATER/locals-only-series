@@ -1,0 +1,100 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>SKATEPARK CLEANUP: LOCALS ONLY</title>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Game Styles -->
+  <link rel="stylesheet" href="skatepark.css">
+
+  <!-- MQTT client (loaded before the game script so NET can connect) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js"></script>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="game" tabindex="0"></canvas>
+
+  <div id="hud" style="display:none">
+    <div class="hudBox"><div class="hudLabel">Score</div><div class="hudValue" id="scoreVal">0</div></div>
+    <div class="hudBox" id="timeBox"><div class="hudLabel">Session</div><div class="hudValue" id="timeVal">90</div></div>
+    <div class="hudBox"><div class="hudLabel">Combo</div><div class="hudValue" id="comboVal">×1</div><div id="comboBar"><div id="comboFill"></div></div></div>
+  </div>
+  <div id="liveBoard" style="display:none"></div>
+  <div id="activeLineBar" dir="rtl" style="display:none"></div>
+
+  <div id="flare"><div class="big"></div><div class="sub"></div></div>
+  <div id="announce"></div>
+
+  <div class="overlay" id="startOverlay">
+    <div class="kicker">SKATEPARK CLEANUP</div>
+    <div class="title">LOCALS<br>ONLY<small>סקייטפארק רחובות · LIVE MAP</small></div>
+    <div class="legend">
+      <div class="chip">🛴 Scooter Kid · 10</div>
+      <div class="chip">🚗 Bimba Kid · 35</div>
+      <div class="chip">🚲 BMX Rider · 75</div>
+    </div>
+    <ul class="rulesList" dir="rtl">
+      <li><b>הוראות:</b> תחליקו בחצי התחתון של המסך כדי לשלוט בסקייטר (WASD במחשב).</li>
+      <li><b>המטרה:</b> להעיף כמה שיותר סקוטרים, בימבות ואופניים מהליינים של הפארק!</li>
+      <li><b>זמן סשן:</b> 90 שניות.</li>
+      <li>💡 <b>טיפ קומבו:</b> תשרשרו פגיעות ברצף כדי להקפיץ את המכפיל! (זמן איפוס: 3 שניות).</li>
+      <li>⚡ <b>בוסט מיוחד:</b> חפשו את סוללת ה-Local Rage שמופיעה בחצי הזמן לבוסט מטורף!</li>
+    </ul>
+    <div id="lobby" dir="rtl">
+      <input id="nameInput" dir="rtl" maxlength="16" placeholder="הכנס שם מקומי" autocomplete="off">
+      <div id="lobbyStatus"><span class="pulse"></span><span>המקומיים בפארק כרגע</span><span class="connTag" id="lobbyConn">מתחבר לפלאזה...</span></div>
+      <ul id="lobbyList"></ul>
+    </div>
+    <button class="btn" id="startBtn">DROP IN</button>
+    <div class="hint">B Skater · סקייטפארק רחובות 🐝</div>
+  </div>
+
+  <div class="overlay hidden" id="endOverlay">
+    <div class="kicker">SESSION OVER</div>
+    <div class="title" style="font-size:25px">PARK REPORT</div>
+    <div id="board">
+      <div class="pcol" id="p1col"><div class="pname" id="p1name" dir="rtl">אתה</div><div class="pscore" id="finalScore">0</div></div>
+      <div class="pcol" id="p2col"><div class="pname" id="p2name" dir="rtl">שחקן #2</div><div class="pscore dim" id="p2score">—</div></div>
+    </div>
+    <div class="statRow">
+      <div class="stat"><div class="hudLabel">Best</div><div class="hudValue" id="bestScore">0</div></div>
+      <div class="stat"><div class="hudLabel">Max Combo</div><div class="hudValue" id="maxCombo">0</div></div>
+    </div>
+    <div class="rules" id="endQuip"></div>
+    <div id="rematchBox" dir="rtl" style="display:none;flex-direction:column;align-items:center;gap:6px;margin-top:4px">
+      <div id="rematchText" style="font-size:11.5px;font-weight:700;color:var(--green)"></div>
+      <button class="chBtn" id="rematchBtn" style="font-size:11px;padding:7px 16px;border-radius:10px">הזמן לליין נוסף 🛹</button>
+    </div>
+    <button class="btn" id="restartBtn">DROP IN AGAIN</button>
+    <button class="btn2" id="mainMenuBtn">⬅ חזרה למסך הראשי</button>
+    <div class="hint">TIP · WATCH THE RED ARROWS — BMX RIDERS CROSS FAST</div>
+  </div>
+  <div class="overlay hidden" id="countOverlay">
+    <div class="kicker" id="countLabel">SYNCED LINE VS —</div>
+    <div id="countNum">3</div>
+  </div>
+</div>
+
+  <!-- CHALLENGE MODAL -->
+  <div id="challengeModal" class="challenge-modal-hidden" style="display:none">
+    <div class="challenge-box">
+      <div class="kicker">LINE CHALLENGE</div>
+      <div id="challengeText" dir="rtl"></div>
+      <div class="challenge-btns">
+        <button class="btn" id="challAcceptBtn">ACCEPT 🛹</button>
+        <button class="btn2" id="challDeclineBtn">DECLINE</button>
+      </div>
+    </div>
+  </div>
+
+
+<!-- Game Script (loaded at end of body; DOM is fully ready) -->
+<script src="skatepark.js"></script>
+
+</body>
+</html>
