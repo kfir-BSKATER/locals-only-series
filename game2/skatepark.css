@@ -199,7 +199,82 @@ canvas{
   border-radius:99px;padding:1px 6px;
 }
 
-/* ---- Mobile ergonomic thumb HUD: arc bottom-right, thumb-reachable ---- */
+/* ---- Virtual joystick — bottom-left, touch devices only ---- */
+#joystick{
+  display:none;           /* shown by JS on IS_TOUCH */
+  position:absolute;
+  left:18px;bottom:18px;
+  width:96px;height:96px;
+  border-radius:50%;
+  background:rgba(12,9,19,.55);
+  border:1.5px solid rgba(78,84,163,.6);
+  box-shadow:0 0 18px rgba(0,0,0,.45);
+  touch-action:none;
+  -webkit-tap-highlight-color:transparent;
+  z-index:56;
+  pointer-events:auto;
+  /* Skateboard wheel motif: subtle amber spokes */
+  background-image:
+    radial-gradient(circle at 50% 50%, rgba(230,169,37,.12) 28%, transparent 29%),
+    radial-gradient(circle at 50% 50%, transparent 44%, rgba(78,84,163,.2) 45%, rgba(78,84,163,.2) 46%, transparent 47%);
+}
+#joystickKnob{
+  position:absolute;
+  width:38px;height:38px;
+  border-radius:50%;
+  background:rgba(230,169,37,.28);
+  border:1.5px solid rgba(230,169,37,.7);
+  box-shadow:0 0 12px rgba(230,169,37,.35);
+  top:50%;left:50%;
+  transform:translate(-50%,-50%);
+  pointer-events:none;
+  transition:transform .05s linear;
+  /* will-change keeps the animation on GPU */
+  will-change:transform;
+}
+
+/* ---- Portrait orientation guard ---- */
+#orientationGuard{
+  display:none;           /* JS shows this on portrait touch */
+  position:fixed;inset:0;
+  z-index:9999;
+  background:rgba(12,9,19,.94);
+  align-items:center;justify-content:center;
+  flex-direction:column;
+  gap:18px;
+  text-align:center;
+  padding:32px;
+  /* backdrop blur for a premium feel */
+  -webkit-backdrop-filter:blur(6px);
+  backdrop-filter:blur(6px);
+}
+#orientationGuard.show{ display:flex; }
+#orientationGuard .og-icon{
+  font-size:52px;
+  animation:ogSpin 2.2s ease-in-out infinite;
+}
+@keyframes ogSpin{
+  0%{transform:rotate(0deg)}
+  40%{transform:rotate(90deg)}
+  60%{transform:rotate(90deg)}
+  100%{transform:rotate(90deg)}
+}
+#orientationGuard .og-text{
+  font-family:'Space Grotesk',system-ui,sans-serif;
+  font-size:clamp(14px,4vw,20px);
+  font-weight:700;
+  color:var(--ink);
+  line-height:1.5;
+  max-width:26ch;
+  text-shadow:0 0 20px rgba(78,84,163,.6);
+}
+#orientationGuard .og-sub{
+  font-size:clamp(11px,3vw,14px);
+  color:var(--dim);
+  font-weight:500;
+}
+
+
 #thumbHud{
   position:absolute;
   right:14px;bottom:14px;

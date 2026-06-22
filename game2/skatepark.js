@@ -360,48 +360,112 @@ window.addEventListener("keydown",(e)=>{
   else if(k==="3") setWeapon("shrapnel");
 });
 
-// ---- Mobile: left-half touchpad drags the pan; right-half HUD fires tools ----
-let touchPanId = null;
-function inLeftHalf(clientX){
-  const r = canvas.getBoundingClientRect();
-  return (clientX - r.left) < r.width*0.5;
+// ---- Mobile: Virtual joystick (bottom-left) controls the pan.
+//      Replaces the old left-half-drag mechanic so the thumb stays put
+//      and never covers the play area.
+//
+//      Architecture:
+//       • The joystick base (#joystick) is a fixed circle, bottom-left.
+//       • The knob (#joystickKnob) tracks the active touch, clamped to
+//         MAX_RADIUS from center.
+//       • Each animation frame the knob's offset is converted to pan
+//         velocity: panTargetX/Y += offset * JOYSTICK_SPEED.
+//       • A separate touch ID (joyId) prevents interference with HUD
+//         button touches on the right side.
+// -----------------------------------------------------------------------
+const joystickEl   = document.getElementById("joystick");
+const joystickKnob = document.getElementById("joystickKnob");
+
+const MAX_RADIUS     = 30;   // px — max knob travel from center
+const JOYSTICK_SPEED = 6.5;  // pan units per pixel of knob offset per frame
+
+let joyId     = null;
+let joyOX     = 0;
+let joyOY     = 0;
+let joyBaseCX = 0;
+let joyBaseCY = 0;
+
+function updateJoyBase(){
+  const r = joystickEl.getBoundingClientRect();
+  joyBaseCX = r.left + r.width  / 2;
+  joyBaseCY = r.top  + r.height / 2;
 }
-function onTouchStart(e){
+
+// Show joystick only on touch devices
+function initJoystick(){
+  if(!IS_TOUCH) return;
+  joystickEl.style.display = "block";
+  updateJoyBase();
+}
+
+joystickEl.addEventListener("touchstart", e=>{
+  if(joyId !== null) return;
   audio();
-  if(G.mode!=="play") return;
+  const t = e.changedTouches[0];
+  joyId = t.identifier;
+  updateJoyBase();
+  joyOX = 0; joyOY = 0;
+  e.preventDefault();
+  e.stopPropagation();
+}, {passive:false});
+
+joystickEl.addEventListener("touchmove", e=>{
   for(const t of e.changedTouches){
-    if(touchPanId===null && inLeftHalf(t.clientX)){
-      touchPanId = t.identifier;
-      lastPX = t.clientX; lastPY = t.clientY;
-      dragging = true;
-      e.preventDefault();
+    if(t.identifier !== joyId) continue;
+    let ox = t.clientX - joyBaseCX;
+    let oy = t.clientY - joyBaseCY;
+    const dist = Math.sqrt(ox*ox + oy*oy);
+    if(dist > MAX_RADIUS){ const s = MAX_RADIUS/dist; ox*=s; oy*=s; }
+    joyOX = ox; joyOY = oy;
+    joystickKnob.style.transform =
+      `translate(calc(-50% + ${ox}px), calc(-50% + ${oy}px))`;
+    e.preventDefault();
+    e.stopPropagation();
+  }
+}, {passive:false});
+
+function joystickRelease(e){
+  for(const t of e.changedTouches){
+    if(t.identifier === joyId){
+      joyId = null; joyOX = 0; joyOY = 0;
+      joystickKnob.style.transform = "translate(-50%,-50%)";
     }
   }
 }
-function onTouchMove(e){
-  if(touchPanId===null) return;
-  for(const t of e.changedTouches){
-    if(t.identifier===touchPanId){
-      const dx = t.clientX - lastPX, dy = t.clientY - lastPY;
-      lastPX = t.clientX; lastPY = t.clientY;
-      // Drag finger right -> elements on the right scroll into view,
-      // matching the corrected mouse logic above (direct-manipulation).
-      panTargetX += dx * PAN_SENS_TOUCH;
-      panTargetY += dy * PAN_SENS_TOUCH;
-      clampPan();
-      e.preventDefault();
-    }
+joystickEl.addEventListener("touchend",    joystickRelease, {passive:true});
+joystickEl.addEventListener("touchcancel", joystickRelease, {passive:true});
+
+// Called every frame from the game loop to apply joystick pan velocity
+function applyJoystickPan(){
+  if(joyId === null) return;
+  panTargetX += joyOX * JOYSTICK_SPEED;
+  panTargetY += joyOY * JOYSTICK_SPEED;
+  clampPan();
+}
+window._applyJoystickPan = applyJoystickPan;
+
+// ---- Block pull-to-refresh and Safari over-scroll globally,
+//      making the game behave like a fullscreen app.
+//      Joystick and HUD buttons call stopPropagation so they
+//      can still receive their own touchmove events.
+document.addEventListener("touchmove", e=>{ e.preventDefault(); }, {passive:false});
+
+// ---- Orientation guard -----------------------------------------------
+const orientGuard = document.getElementById("orientationGuard");
+
+function checkOrientation(){
+  if(!IS_TOUCH) return;
+  const isPortrait = window.innerHeight > window.innerWidth;
+  if(isPortrait){
+    orientGuard.classList.add("show");
+  } else {
+    orientGuard.classList.remove("show");
+    setTimeout(updateJoyBase, 200);
   }
 }
-function onTouchEnd(e){
-  for(const t of e.changedTouches){
-    if(t.identifier===touchPanId){ touchPanId=null; dragging=false; }
-  }
-}
-canvas.addEventListener("touchstart", onTouchStart, {passive:false});
-canvas.addEventListener("touchmove", onTouchMove, {passive:false});
-window.addEventListener("touchend", onTouchEnd);
-window.addEventListener("touchcancel", onTouchEnd);
+window.addEventListener("resize",            checkOrientation);
+window.addEventListener("orientationchange", checkOrientation);
+setTimeout(checkOrientation, 100);
 
 // ============================================================
 // WEAPON SELECTION + FIRING
@@ -737,8 +801,11 @@ function update(dt){
   G.elapsed+=dt; G.time-=dt;
   if(G.time<=0){ G.time=0; end(); return; }
 
+  // Apply virtual joystick pan velocity (no-op on desktop / when not dragging)
+  if(typeof window._applyJoystickPan === "function") window._applyJoystickPan();
+
   // smooth pan toward the raw input target (mouse delta accumulation on
-  // PC via Pointer Lock, or thumb-drag on mobile)
+  // PC via Pointer Lock, or joystick on mobile)
   const pk = 1-Math.exp(-PAN_SMOOTH*dt);
   G.pan.x += (panTargetX-G.pan.x)*pk;
   G.pan.y += (panTargetY-G.pan.y)*pk;
@@ -1599,6 +1666,8 @@ function frame(now){
 // to be drawn here — it simply never moves, which is the whole point of
 // the static-scope control scheme.
 applyControlScheme();
+// Initialise virtual joystick now that IS_TOUCH is known and DOM is ready
+if(typeof initJoystick === "function") initJoystick();
 requestAnimationFrame(frame);
 
 })();

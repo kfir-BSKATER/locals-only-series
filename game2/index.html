@@ -72,6 +72,19 @@
   <div id="liveBoard" style="display:none"></div>
   <div id="activeLineBar" dir="rtl" style="display:none"></div>
 
+  <!-- Virtual joystick — left thumb pan control (touch devices only).
+       Replaces the previous left-half-drag mechanic so the thumb stays
+       in a fixed spot and never occludes the play area. -->
+  <div id="joystick"><div id="joystickKnob"></div></div>
+
+  <!-- Portrait orientation guard — shown when device is held upright.
+       The game is landscape-only; this overlay prompts the user to rotate. -->
+  <div id="orientationGuard">
+    <div class="og-icon">🛹</div>
+    <div class="og-text">נא לסובב את המכשיר לרוחב<br>לחוויית משחק מלאה</div>
+    <div class="og-sub">LOCALS ONLY 2 · LANDSCAPE MODE</div>
+  </div>
+
   <!-- Mobile-only ergonomic thumb HUD: arc of weapon buttons, bottom-right -->
   <div id="thumbHud" style="display:none">
     <button id="btnWax" class="toolBtn toolBtnSmall" type="button">
