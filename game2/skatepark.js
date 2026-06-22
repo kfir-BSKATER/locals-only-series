@@ -377,7 +377,9 @@ const joystickEl   = document.getElementById("joystick");
 const joystickKnob = document.getElementById("joystickKnob");
 
 const MAX_RADIUS     = 30;   // px — max knob travel from center
-const JOYSTICK_SPEED = 6.5;  // pan units per pixel of knob offset per frame
+const JOYSTICK_SPEED = 1.8;  // pan units per pixel of knob offset per frame
+                              // (was 6.5 — too fast; at max deflection 30px
+                              //  old: 195 u/frame, new: 54 u/frame — smooth)
 
 let joyId     = null;
 let joyOX     = 0;
