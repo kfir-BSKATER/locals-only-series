@@ -274,7 +274,7 @@ canvas{
   font-weight:500;
 }
 
-
+/* ---- Mobile ergonomic thumb HUD: arc bottom-right, thumb-reachable ---- */
 #thumbHud{
   position:absolute;
   right:14px;bottom:14px;
@@ -525,7 +525,6 @@ canvas{
 @media (hover:none), (pointer:coarse){
   #weaponStrip{ display:none !important; }
 }
-
 
 @media (prefers-reduced-motion: reduce){
   #flare.show{animation-duration:.01s}
