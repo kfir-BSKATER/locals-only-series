@@ -376,10 +376,10 @@ window.addEventListener("keydown",(e)=>{
 const joystickEl   = document.getElementById("joystick");
 const joystickKnob = document.getElementById("joystickKnob");
 
-const MAX_RADIUS     = 30;   // px — max knob travel from center
-const JOYSTICK_SPEED = 1.8;  // pan units per pixel of knob offset per frame
-                              // (was 6.5 — too fast; at max deflection 30px
-                              //  old: 195 u/frame, new: 54 u/frame — smooth)
+const MAX_RADIUS          = 30;   // px — max knob travel from center
+const JOYSTICK_SPEED      = 0.6;  // pan units per pixel of knob offset per frame
+const JOYSTICK_SENSITIVITY = 0.5; // global multiplier — change this one value to tune feel
+                                   // final velocity = offset * JOYSTICK_SPEED * JOYSTICK_SENSITIVITY
 
 let joyId     = null;
 let joyOX     = 0;
@@ -440,8 +440,8 @@ joystickEl.addEventListener("touchcancel", joystickRelease, {passive:true});
 // Called every frame from the game loop to apply joystick pan velocity
 function applyJoystickPan(){
   if(joyId === null) return;
-  panTargetX += joyOX * JOYSTICK_SPEED;
-  panTargetY += joyOY * JOYSTICK_SPEED;
+  panTargetX += joyOX * JOYSTICK_SPEED * JOYSTICK_SENSITIVITY;
+  panTargetY += joyOY * JOYSTICK_SPEED * JOYSTICK_SENSITIVITY;
   clampPan();
 }
 window._applyJoystickPan = applyJoystickPan;
