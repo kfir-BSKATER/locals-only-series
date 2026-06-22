@@ -274,7 +274,7 @@ canvas{
   font-weight:500;
 }
 
-/* ---- Mobile ergonomic thumb HUD: arc bottom-right, thumb-reachable ---- */
+
 #thumbHud{
   position:absolute;
   right:14px;bottom:14px;
@@ -526,6 +526,7 @@ canvas{
   #weaponStrip{ display:none !important; }
 }
 
+
 @media (prefers-reduced-motion: reduce){
   #flare.show{animation-duration:.01s}
   #timeVal.low{animation:none}
@@ -533,65 +534,59 @@ canvas{
 }
 
 /* ---------------------------------------------------------
-   Mobile landscape fix — overlay fits in one screen height
-   Target: touch devices held sideways (short viewport).
-   Condition: pointer:coarse catches all phones/tablets;
-   max-height:560px excludes large iPads in landscape
-   where the viewport is tall enough to not need this.
+   Mobile landscape fix — overlay fits in one screen height.
+   Applies to ALL touch devices in landscape (no max-height
+   pixel limit — the old 560px cap silently excluded iPhones
+   whose landscape viewport is ~390-430px tall).
    --------------------------------------------------------- */
-@media (pointer:coarse) and (orientation:landscape) and (max-height:560px){
+@media (pointer:coarse) and (orientation:landscape){
 
-  /* Pin the overlay so it never exceeds the visible area,
-     and enable internal scrolling so DROP IN is always reachable */
+  /* Pin the overlay so it never exceeds the visible area and
+     always scrolls internally so DROP IN is reachable.        */
   .overlay{
-    position:fixed;          /* detach from #stage so vh is the true window */
-    inset:0;
-    max-height:92dvh;        /* leave a sliver of breathing room */
-    margin:auto;
-    justify-content:flex-start;   /* stack from top so scroll reaches bottom */
-    padding:10px 14px 14px;
-    gap:5px;
-    border-radius:10px;
-    /* webkit momentum scroll for iOS */
-    -webkit-overflow-scrolling:touch;
+    position:fixed !important;   /* break out of #stage sizing  */
+    inset:0 !important;
+    max-height:80dvh !important; /* hard cap: never taller than 80% of screen */
+    max-height:80vh !important;  /* fallback for older Safari   */
+    margin:auto !important;
+    justify-content:flex-start !important; /* stack top→bottom  */
+    overflow-y:auto !important;
+    -webkit-overflow-scrolling:touch;      /* iOS momentum scroll */
+    padding:10px 14px 16px !important;
+    gap:4px !important;
+    border-radius:10px !important;
   }
 
-  /* Tighten the game title in landscape so it takes less vertical space */
+  /* Tighten title */
   .title{
-    font-size:clamp(16px, 5.5vw, 24px);
-    line-height:1.0;
+    font-size:clamp(14px, 5vw, 22px) !important;
+    line-height:1.0 !important;
   }
 
-  /* Collapse the rules list spacing */
-  .rulesList{
-    gap:2px;
-  }
+  /* Collapse rules */
+  .rulesList{ gap:2px !important; }
   .rulesList li{
-    font-size:clamp(9px, 2.2vw, 11px);
-    padding:3px 8px;
-    line-height:1.3;
+    font-size:clamp(9px, 2vw, 11px) !important;
+    padding:2px 8px !important;
+    line-height:1.25 !important;
   }
 
-  /* Shrink the lobby input area */
-  #lobby{
-    gap:4px;
-  }
-  #nameInput{
-    padding:7px 10px;
-    font-size:13px;
-  }
+  /* Lobby */
+  #lobby{ padding:6px 10px !important; margin-top:2px !important; }
+  #nameInput{ padding:6px 10px !important; font-size:12px !important; margin-bottom:5px !important; }
 
-  /* Make DROP IN button slightly more compact */
+  /* DROP IN button — visible and tappable */
   .btn{
-    padding:9px 28px;
-    font-size:clamp(12px, 3.5vw, 15px);
-    margin-top:4px;
+    padding:9px 26px !important;
+    font-size:clamp(12px, 3.5vw, 15px) !important;
+    margin-top:6px !important;
   }
 
-  /* Tighten legend chips */
-  .legend{ gap:5px; margin:2px 0; }
-  .chip{ padding:3px 9px; font-size:clamp(8px,2.2vw,10px); }
-
-  /* Reduce hint text margin */
-  .hint{ margin-top:4px; }
+  /* Chips + hint */
+  .legend{ gap:4px !important; margin:2px 0 !important; }
+  .chip{ padding:2px 8px !important; font-size:clamp(8px, 2vw, 10px) !important; }
+  .hint{ margin-top:3px !important; }
+  .kicker{ margin-bottom:1px !important; }
 }
+
+

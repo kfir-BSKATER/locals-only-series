@@ -445,10 +445,18 @@ function applyJoystickPan(){
 window._applyJoystickPan = applyJoystickPan;
 
 // ---- Block pull-to-refresh and Safari over-scroll globally,
-//      making the game behave like a fullscreen app.
-//      Joystick and HUD buttons call stopPropagation so they
-//      can still receive their own touchmove events.
-document.addEventListener("touchmove", e=>{ e.preventDefault(); }, {passive:false});
+//      but ALLOW touchmove inside overlay elements so the user
+//      can scroll the instructions/lobby to reach DROP IN.
+document.addEventListener("touchmove", e=>{
+  // Allow default behaviour (scroll) when the touch target is inside
+  // an overlay or any scrollable child of it.
+  let el = e.target;
+  while(el && el !== document.body){
+    if(el.classList && el.classList.contains("overlay")) return; // allow scroll
+    el = el.parentElement;
+  }
+  e.preventDefault();
+}, {passive:false});
 
 // ---- Orientation guard -----------------------------------------------
 const orientGuard = document.getElementById("orientationGuard");
