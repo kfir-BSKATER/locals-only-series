@@ -352,8 +352,8 @@ canvas{
   text-align:center;
   padding:clamp(8px,2vh,24px) clamp(10px,4vw,24px);
   gap:clamp(4px,1.1vh,10px);
-  overflow:hidden;
-  overflow-y:auto;
+  overflow-x:hidden;
+  overflow-y:auto;   /* allow internal scroll when content overflows */
   transition:opacity .25s;
   z-index:100;
 }
@@ -526,8 +526,73 @@ canvas{
   #weaponStrip{ display:none !important; }
 }
 
+
 @media (prefers-reduced-motion: reduce){
   #flare.show{animation-duration:.01s}
   #timeVal.low{animation:none}
   .toolBtn:active{ transform:none; }
+}
+
+/* ---------------------------------------------------------
+   Mobile landscape fix — overlay fits in one screen height
+   Target: touch devices held sideways (short viewport).
+   Condition: pointer:coarse catches all phones/tablets;
+   max-height:560px excludes large iPads in landscape
+   where the viewport is tall enough to not need this.
+   --------------------------------------------------------- */
+@media (pointer:coarse) and (orientation:landscape) and (max-height:560px){
+
+  /* Pin the overlay so it never exceeds the visible area,
+     and enable internal scrolling so DROP IN is always reachable */
+  .overlay{
+    position:fixed;          /* detach from #stage so vh is the true window */
+    inset:0;
+    max-height:92dvh;        /* leave a sliver of breathing room */
+    margin:auto;
+    justify-content:flex-start;   /* stack from top so scroll reaches bottom */
+    padding:10px 14px 14px;
+    gap:5px;
+    border-radius:10px;
+    /* webkit momentum scroll for iOS */
+    -webkit-overflow-scrolling:touch;
+  }
+
+  /* Tighten the game title in landscape so it takes less vertical space */
+  .title{
+    font-size:clamp(16px, 5.5vw, 24px);
+    line-height:1.0;
+  }
+
+  /* Collapse the rules list spacing */
+  .rulesList{
+    gap:2px;
+  }
+  .rulesList li{
+    font-size:clamp(9px, 2.2vw, 11px);
+    padding:3px 8px;
+    line-height:1.3;
+  }
+
+  /* Shrink the lobby input area */
+  #lobby{
+    gap:4px;
+  }
+  #nameInput{
+    padding:7px 10px;
+    font-size:13px;
+  }
+
+  /* Make DROP IN button slightly more compact */
+  .btn{
+    padding:9px 28px;
+    font-size:clamp(12px, 3.5vw, 15px);
+    margin-top:4px;
+  }
+
+  /* Tighten legend chips */
+  .legend{ gap:5px; margin:2px 0; }
+  .chip{ padding:3px 9px; font-size:clamp(8px,2.2vw,10px); }
+
+  /* Reduce hint text margin */
+  .hint{ margin-top:4px; }
 }
