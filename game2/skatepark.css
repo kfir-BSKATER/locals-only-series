@@ -199,38 +199,32 @@ canvas{
   border-radius:99px;padding:1px 6px;
 }
 
-/* ---- Virtual joystick — bottom-left, touch devices only ---- */
-#joystick{
-  display:none;           /* shown by JS on IS_TOUCH */
+/* ---- Virtual trackpad zone — left half, touch devices only.
+        No visual element; the left 50% of #stage is the touch area.
+        A subtle hint label appears on first touch (via JS class).     ---- */
+#trackpadHint{
+  display:none;              /* JS shows briefly on first touch */
   position:absolute;
-  left:18px;bottom:18px;
-  width:96px;height:96px;
-  border-radius:50%;
-  background:rgba(12,9,19,.55);
-  border:1.5px solid rgba(78,84,163,.6);
-  box-shadow:0 0 18px rgba(0,0,0,.45);
-  touch-action:none;
-  -webkit-tap-highlight-color:transparent;
-  z-index:56;
-  pointer-events:auto;
-  /* Skateboard wheel motif: subtle amber spokes */
-  background-image:
-    radial-gradient(circle at 50% 50%, rgba(230,169,37,.12) 28%, transparent 29%),
-    radial-gradient(circle at 50% 50%, transparent 44%, rgba(78,84,163,.2) 45%, rgba(78,84,163,.2) 46%, transparent 47%);
-}
-#joystickKnob{
-  position:absolute;
-  width:38px;height:38px;
-  border-radius:50%;
-  background:rgba(230,169,37,.28);
-  border:1.5px solid rgba(230,169,37,.7);
-  box-shadow:0 0 12px rgba(230,169,37,.35);
-  top:50%;left:50%;
-  transform:translate(-50%,-50%);
+  left:0;top:0;bottom:0;
+  width:50%;
+  align-items:center;
+  justify-content:center;
   pointer-events:none;
-  transition:transform .05s linear;
-  /* will-change keeps the animation on GPU */
-  will-change:transform;
+  z-index:54;
+  opacity:0;
+  transition:opacity .3s;
+}
+#trackpadHint.show{ display:flex; opacity:1; }
+#trackpadHint.fade{ opacity:0; }
+#trackpadHint span{
+  font-family:'Space Grotesk',system-ui,sans-serif;
+  font-size:10px;
+  letter-spacing:.18em;
+  color:rgba(243,239,255,.35);
+  text-transform:uppercase;
+  font-weight:700;
+  writing-mode:vertical-rl;
+  transform:rotate(180deg);
 }
 
 /* ---- Portrait orientation guard ---- */
@@ -277,8 +271,8 @@ canvas{
 
 #thumbHud{
   position:absolute;
-  right:14px;bottom:14px;
-  width:158px;height:140px;
+  right:12px;bottom:12px;
+  width:190px;height:170px;
   z-index:55;
   pointer-events:none; /* children re-enable */
 }
@@ -296,23 +290,23 @@ canvas{
 }
 .toolBtn:active{ transform:scale(.92); }
 .toolBtnMain{
-  width:78px;height:78px;
+  width:96px;height:96px;
   right:0;bottom:0;
-  font-size:32px;
+  font-size:38px;
   background:rgba(230,169,37,.22);
   border-color:var(--brand-amber);
-  box-shadow:0 0 22px rgba(230,169,37,.45);
+  box-shadow:0 0 26px rgba(230,169,37,.5);
 }
 .toolBtnSmall{
-  width:54px;height:54px;
+  width:68px;height:68px;
   background:rgba(78,84,163,.28);
   border-color:rgba(78,84,163,.75);
   flex-direction:column;
 }
-#btnWax{ right:78px; bottom:62px; }
-#btnShrapnel{ right:8px; bottom:96px; }
-.toolIcon{font-size:22px;line-height:1;display:block;pointer-events:none}
-.toolBtnMain .toolIcon{font-size:34px}
+#btnWax{ right:96px; bottom:76px; }
+#btnShrapnel{ right:10px; bottom:118px; }
+.toolIcon{font-size:24px;line-height:1;display:block;pointer-events:none}
+.toolBtnMain .toolIcon{font-size:40px}
 .toolCount{
   position:absolute;
   bottom:-4px;right:-2px;

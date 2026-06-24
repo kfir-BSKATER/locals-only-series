@@ -360,91 +360,91 @@ window.addEventListener("keydown",(e)=>{
   else if(k==="3") setWeapon("shrapnel");
 });
 
-// ---- Mobile: Virtual joystick (bottom-left) controls the pan.
-//      Replaces the old left-half-drag mechanic so the thumb stays put
-//      and never covers the play area.
+// ---- Mobile: Virtual Trackpad — left half of screen.
+//      The player touches anywhere in the left 50% and drags;
+//      the crosshair moves exactly as much as the thumb moves
+//      (relative delta, not absolute position). No drift, no axis
+//      bias. A dead zone of TRACKPAD_DEAD_PX pixels filters micro-
+//      noise so diagonal creep is eliminated.
 //
-//      Architecture:
-//       • The joystick base (#joystick) is a fixed circle, bottom-left.
-//       • The knob (#joystickKnob) tracks the active touch, clamped to
-//         MAX_RADIUS from center.
-//       • Each animation frame the knob's offset is converted to pan
-//         velocity: panTargetX/Y += offset * JOYSTICK_SPEED.
-//       • A separate touch ID (joyId) prevents interference with HUD
-//         button touches on the right side.
+//      Sensitivity: TRACKPAD_SENS scales the raw pixel delta to
+//      pan units. Tune this single value to adjust speed.
 // -----------------------------------------------------------------------
-const joystickEl   = document.getElementById("joystick");
-const joystickKnob = document.getElementById("joystickKnob");
+const TRACKPAD_SENS    = 1.6;  // pan units per CSS pixel of drag
+const TRACKPAD_DEAD_PX = 3;    // px — movements smaller than this are ignored
 
-const MAX_RADIUS          = 30;   // px — max knob travel from center
-const JOYSTICK_SPEED      = 0.6;  // pan units per pixel of knob offset per frame
-const JOYSTICK_SENSITIVITY = 0.5; // global multiplier — change this one value to tune feel
-                                   // final velocity = offset * JOYSTICK_SPEED * JOYSTICK_SENSITIVITY
+let tpId   = null;   // active touch identifier (left-half only)
+let tpLX   = 0;      // last known touch X
+let tpLY   = 0;      // last known touch Y
+let tpHintShown = false;
 
-let joyId     = null;
-let joyOX     = 0;
-let joyOY     = 0;
-let joyBaseCX = 0;
-let joyBaseCY = 0;
+const trackpadHint = document.getElementById("trackpadHint");
 
-function updateJoyBase(){
-  const r = joystickEl.getBoundingClientRect();
-  joyBaseCX = r.left + r.width  / 2;
-  joyBaseCY = r.top  + r.height / 2;
+function inLeftHalf(clientX){
+  const r = canvas.getBoundingClientRect();
+  return (clientX - r.left) < r.width * 0.5;
 }
 
-// Show joystick only on touch devices
-function initJoystick(){
+function initTrackpad(){
   if(!IS_TOUCH) return;
-  joystickEl.style.display = "block";
-  updateJoyBase();
+  // Show a one-time hint on first game start
 }
 
-joystickEl.addEventListener("touchstart", e=>{
-  if(joyId !== null) return;
-  audio();
-  const t = e.changedTouches[0];
-  joyId = t.identifier;
-  updateJoyBase();
-  joyOX = 0; joyOY = 0;
-  e.preventDefault();
-  e.stopPropagation();
-}, {passive:false});
-
-joystickEl.addEventListener("touchmove", e=>{
+// touchstart on the canvas — capture left-half touches as trackpad
+canvas.addEventListener("touchstart", e=>{
+  if(!IS_TOUCH || G.mode !== "play") return;
   for(const t of e.changedTouches){
-    if(t.identifier !== joyId) continue;
-    let ox = t.clientX - joyBaseCX;
-    let oy = t.clientY - joyBaseCY;
-    const dist = Math.sqrt(ox*ox + oy*oy);
-    if(dist > MAX_RADIUS){ const s = MAX_RADIUS/dist; ox*=s; oy*=s; }
-    joyOX = ox; joyOY = oy;
-    joystickKnob.style.transform =
-      `translate(calc(-50% + ${ox}px), calc(-50% + ${oy}px))`;
-    e.preventDefault();
-    e.stopPropagation();
-  }
-}, {passive:false});
-
-function joystickRelease(e){
-  for(const t of e.changedTouches){
-    if(t.identifier === joyId){
-      joyId = null; joyOX = 0; joyOY = 0;
-      joystickKnob.style.transform = "translate(-50%,-50%)";
+    if(tpId !== null) break;          // only one trackpad finger
+    if(!inLeftHalf(t.clientX)) continue;
+    tpId = t.identifier;
+    tpLX = t.clientX;
+    tpLY = t.clientY;
+    // Show brief trackpad hint on very first use
+    if(!tpHintShown && trackpadHint){
+      tpHintShown = true;
+      trackpadHint.classList.add("show");
+      setTimeout(()=>{
+        trackpadHint.classList.add("fade");
+        setTimeout(()=>{ trackpadHint.classList.remove("show","fade"); }, 350);
+      }, 900);
     }
+    e.preventDefault();
+    break;
+  }
+}, {passive:false});
+
+canvas.addEventListener("touchmove", e=>{
+  if(tpId === null) return;
+  for(const t of e.changedTouches){
+    if(t.identifier !== tpId) continue;
+    let dx = t.clientX - tpLX;
+    let dy = t.clientY - tpLY;
+    tpLX = t.clientX;
+    tpLY = t.clientY;
+    // Dead zone: ignore tiny movements to suppress diagonal noise
+    if(Math.abs(dx) < TRACKPAD_DEAD_PX) dx = 0;
+    if(Math.abs(dy) < TRACKPAD_DEAD_PX) dy = 0;
+    if(dx !== 0 || dy !== 0){
+      panTargetX += dx * TRACKPAD_SENS;
+      panTargetY += dy * TRACKPAD_SENS;
+      clampPan();
+    }
+    e.preventDefault();
+  }
+}, {passive:false});
+
+function trackpadRelease(e){
+  for(const t of e.changedTouches){
+    if(t.identifier === tpId) tpId = null;
   }
 }
-joystickEl.addEventListener("touchend",    joystickRelease, {passive:true});
-joystickEl.addEventListener("touchcancel", joystickRelease, {passive:true});
+canvas.addEventListener("touchend",    trackpadRelease, {passive:true});
+canvas.addEventListener("touchcancel", trackpadRelease, {passive:true});
 
-// Called every frame from the game loop to apply joystick pan velocity
-function applyJoystickPan(){
-  if(joyId === null) return;
-  panTargetX += joyOX * JOYSTICK_SPEED * JOYSTICK_SENSITIVITY;
-  panTargetY += joyOY * JOYSTICK_SPEED * JOYSTICK_SENSITIVITY;
-  clampPan();
-}
-window._applyJoystickPan = applyJoystickPan;
+// applyJoystickPan is no longer needed (trackpad is delta-based, not
+// velocity-based) but the game loop calls it via window._applyJoystickPan —
+// leave a no-op so nothing breaks.
+window._applyJoystickPan = function(){};
 
 // ---- Block pull-to-refresh and Safari over-scroll globally,
 //      but ALLOW touchmove inside overlay elements so the user
@@ -470,12 +470,25 @@ function checkOrientation(){
     orientGuard.classList.add("show");
   } else {
     orientGuard.classList.remove("show");
-    setTimeout(updateJoyBase, 200);
   }
 }
 window.addEventListener("resize",            checkOrientation);
 window.addEventListener("orientationchange", checkOrientation);
 setTimeout(checkOrientation, 100);
+
+// ---- Fullscreen API — request on DROP IN (touch only) ----------------
+function requestFullscreenIfNeeded(){
+  if(!IS_TOUCH) return;
+  const el = document.documentElement;
+  try{
+    if(el.requestFullscreen)               el.requestFullscreen({navigationUI:"hide"});
+    else if(el.webkitRequestFullscreen)    el.webkitRequestFullscreen();
+    else if(el.mozRequestFullScreen)       el.mozRequestFullScreen();
+    else if(el.msRequestFullscreen)        el.msRequestFullscreen();
+  } catch(err){
+    // Fullscreen request may be denied silently — not critical
+  }
+}
 
 // ============================================================
 // WEAPON SELECTION + FIRING
@@ -751,6 +764,7 @@ function reset(){
 }
 function start(){
   audio();
+  requestFullscreenIfNeeded();          // enter fullscreen on DROP IN (touch only)
   if(NET.room && !NET.starting) leaveRoom();   // solo restart exits the synced room
   reset(); G.mode="play";
   startOverlay.classList.add("hidden"); endOverlay.classList.add("hidden");
@@ -1676,8 +1690,8 @@ function frame(now){
 // to be drawn here — it simply never moves, which is the whole point of
 // the static-scope control scheme.
 applyControlScheme();
-// Initialise virtual joystick now that IS_TOUCH is known and DOM is ready
-if(typeof initJoystick === "function") initJoystick();
+// Initialise trackpad (replaces the old virtual joystick)
+if(typeof initTrackpad === "function") initTrackpad();
 requestAnimationFrame(frame);
 
 })();

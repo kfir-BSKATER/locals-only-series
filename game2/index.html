@@ -72,10 +72,10 @@
   <div id="liveBoard" style="display:none"></div>
   <div id="activeLineBar" dir="rtl" style="display:none"></div>
 
-  <!-- Virtual joystick — left thumb pan control (touch devices only).
-       Replaces the previous left-half-drag mechanic so the thumb stays
-       in a fixed spot and never occludes the play area. -->
-  <div id="joystick"><div id="joystickKnob"></div></div>
+  <!-- Virtual trackpad hint — shows briefly on first touch in left half.
+       The entire left 50% of #stage is the trackpad zone; no visible
+       element is needed during play. -->
+  <div id="trackpadHint"><span>גרור לכוונון</span></div>
 
   <!-- Portrait orientation guard — shown when device is held upright.
        The game is landscape-only; this overlay prompts the user to rotate. -->
