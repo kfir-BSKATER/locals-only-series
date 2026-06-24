@@ -361,21 +361,29 @@ window.addEventListener("keydown",(e)=>{
 });
 
 // ---- Mobile: Virtual Trackpad — left half of screen.
-//      The player touches anywhere in the left 50% and drags;
-//      the crosshair moves exactly as much as the thumb moves
-//      (relative delta, not absolute position). No drift, no axis
-//      bias. A dead zone of TRACKPAD_DEAD_PX pixels filters micro-
-//      noise so diagonal creep is eliminated.
 //
-//      Sensitivity: TRACKPAD_SENS scales the raw pixel delta to
-//      pan units. Tune this single value to adjust speed.
+//      CONTINUOUS DRIFT mode (not delta):
+//       • touchstart records the anchor point (tpAX/Y).
+//       • Every animation frame, the current touch position is compared
+//         to the anchor. The offset vector drives pan velocity — so
+//         holding the finger at the edge of reach keeps the crosshair
+//         moving continuously, no lifting required.
+//       • Inside TRACKPAD_DEAD_PX the velocity is zero (dead zone).
+//       • Speed is proportional to offset distance up to TRACKPAD_MAX_PX.
+//       • TRACKPAD_SENS converts offset-px to pan-units per frame.
+//
+//      To tune feel: adjust TRACKPAD_SENS (overall speed) or
+//      TRACKPAD_MAX_PX (how far you pull before hitting max speed).
 // -----------------------------------------------------------------------
-const TRACKPAD_SENS    = 1.6;  // pan units per CSS pixel of drag
-const TRACKPAD_DEAD_PX = 3;    // px — movements smaller than this are ignored
+const TRACKPAD_SENS    = 0.55; // pan-units per offset-px per frame at max
+const TRACKPAD_DEAD_PX = 6;    // px from anchor — movements inside ignored
+const TRACKPAD_MAX_PX  = 55;   // px — offset clamped to this for max speed
 
 let tpId   = null;   // active touch identifier (left-half only)
-let tpLX   = 0;      // last known touch X
-let tpLY   = 0;      // last known touch Y
+let tpAX   = 0;      // anchor X (where the finger first landed)
+let tpAY   = 0;      // anchor Y
+let tpCX   = 0;      // current touch X (updated in touchmove)
+let tpCY   = 0;      // current touch Y
 let tpHintShown = false;
 
 const trackpadHint = document.getElementById("trackpadHint");
@@ -387,19 +395,19 @@ function inLeftHalf(clientX){
 
 function initTrackpad(){
   if(!IS_TOUCH) return;
-  // Show a one-time hint on first game start
+  // no visual element needed — the whole left half is the zone
 }
 
-// touchstart on the canvas — capture left-half touches as trackpad
+// touchstart — plant the anchor
 canvas.addEventListener("touchstart", e=>{
   if(!IS_TOUCH || G.mode !== "play") return;
   for(const t of e.changedTouches){
-    if(tpId !== null) break;          // only one trackpad finger
+    if(tpId !== null) break;
     if(!inLeftHalf(t.clientX)) continue;
     tpId = t.identifier;
-    tpLX = t.clientX;
-    tpLY = t.clientY;
-    // Show brief trackpad hint on very first use
+    tpAX = t.clientX;  tpAY = t.clientY;
+    tpCX = t.clientX;  tpCY = t.clientY;
+    // One-time hint
     if(!tpHintShown && trackpadHint){
       tpHintShown = true;
       trackpadHint.classList.add("show");
@@ -413,38 +421,48 @@ canvas.addEventListener("touchstart", e=>{
   }
 }, {passive:false});
 
+// touchmove — update current position only (velocity applied in game loop)
 canvas.addEventListener("touchmove", e=>{
   if(tpId === null) return;
   for(const t of e.changedTouches){
     if(t.identifier !== tpId) continue;
-    let dx = t.clientX - tpLX;
-    let dy = t.clientY - tpLY;
-    tpLX = t.clientX;
-    tpLY = t.clientY;
-    // Dead zone: ignore tiny movements to suppress diagonal noise
-    if(Math.abs(dx) < TRACKPAD_DEAD_PX) dx = 0;
-    if(Math.abs(dy) < TRACKPAD_DEAD_PX) dy = 0;
-    if(dx !== 0 || dy !== 0){
-      panTargetX += dx * TRACKPAD_SENS;
-      panTargetY += dy * TRACKPAD_SENS;
-      clampPan();
-    }
+    tpCX = t.clientX;
+    tpCY = t.clientY;
     e.preventDefault();
   }
 }, {passive:false});
 
 function trackpadRelease(e){
   for(const t of e.changedTouches){
-    if(t.identifier === tpId) tpId = null;
+    if(t.identifier === tpId){
+      tpId = null;
+      tpCX = tpAX;  tpCY = tpAY;  // reset offset to zero
+    }
   }
 }
 canvas.addEventListener("touchend",    trackpadRelease, {passive:true});
 canvas.addEventListener("touchcancel", trackpadRelease, {passive:true});
 
-// applyJoystickPan is no longer needed (trackpad is delta-based, not
-// velocity-based) but the game loop calls it via window._applyJoystickPan —
-// leave a no-op so nothing breaks.
-window._applyJoystickPan = function(){};
+// Called every animation frame by the game loop (via window._applyJoystickPan).
+// Computes the offset vector from anchor → current, applies dead zone,
+// scales to velocity, and accumulates into panTarget.
+window._applyJoystickPan = function(){
+  if(tpId === null) return;
+  let ox = tpCX - tpAX;
+  let oy = tpCY - tpAY;
+  // Dead zone — no movement inside this radius
+  const dist = Math.sqrt(ox*ox + oy*oy);
+  if(dist < TRACKPAD_DEAD_PX) return;
+  // Clamp to max offset, keep direction
+  const clamped = Math.min(dist, TRACKPAD_MAX_PX);
+  const scale   = (clamped - TRACKPAD_DEAD_PX) /
+                  (TRACKPAD_MAX_PX - TRACKPAD_DEAD_PX); // 0…1
+  const nx = ox / dist;  // unit vector
+  const ny = oy / dist;
+  panTargetX += nx * scale * TRACKPAD_MAX_PX * TRACKPAD_SENS;
+  panTargetY += ny * scale * TRACKPAD_MAX_PX * TRACKPAD_SENS;
+  clampPan();
+};
 
 // ---- Block pull-to-refresh and Safari over-scroll globally,
 //      but ALLOW touchmove inside overlay elements so the user

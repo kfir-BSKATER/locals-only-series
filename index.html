@@ -277,15 +277,30 @@
 
     /* ── SUB-HEADLINE (below logo, above banners) ────────────── */
     .hub-sub {
-      font-family: 'Space Grotesk', system-ui, sans-serif;
-      font-size: clamp(11px, 2vw, 14px);
-      font-weight: 500;
-      color: var(--dim);
-      letter-spacing: .06em;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 4px;
       text-align: center;
-      line-height: 1.5;
-      opacity: .85;
-      margin-top: clamp(-16px, -1.5vh, -8px); /* pulls it closer to the logo */
+      margin-top: clamp(-8px, -1vh, 0px);
+    }
+    .hub-sub__line1 {
+      font-family: 'Space Grotesk', system-ui, sans-serif;
+      font-size: clamp(16px, 3.5vw, 24px);
+      font-weight: 400;
+      color: #f3efff;
+      letter-spacing: .01em;
+      line-height: 1.2;
+    }
+    .hub-sub__line2 {
+      font-family: 'Arial Black', 'Helvetica Neue', Arial, sans-serif;
+      font-size: clamp(11px, 2.2vw, 16px);
+      font-weight: 800;
+      color: var(--brand-amber);
+      letter-spacing: .18em;
+      line-height: 1.2;
+      text-transform: uppercase;
+      text-shadow: 0 0 14px rgba(230,169,37,.35);
     }
 
     /* ── FOOTER ─────────────────────────────────────────────── */
@@ -320,7 +335,10 @@
   </header>
 
   <!-- Sub-headline: sits between logo and game banners -->
-  <p class="hub-sub">סדרת המשחקים של כפיר מהאקדמיה של הסקייטבורד</p>
+  <div class="hub-sub">
+    <span class="hub-sub__line1">סדרת המשחקים של כפיר</span>
+    <span class="hub-sub__line2">האקדמיה של הסקייטבורד</span>
+  </div>
 
   <!-- ── GAME BANNERS ──────────────────────────────────────── -->
   <nav class="games-grid" aria-label="בחר משחק">
