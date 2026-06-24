@@ -362,28 +362,22 @@ window.addEventListener("keydown",(e)=>{
 
 // ---- Mobile: Virtual Trackpad — left half of screen.
 //
-//      CONTINUOUS DRIFT mode (not delta):
-//       • touchstart records the anchor point (tpAX/Y).
-//       • Every animation frame, the current touch position is compared
-//         to the anchor. The offset vector drives pan velocity — so
-//         holding the finger at the edge of reach keeps the crosshair
-//         moving continuously, no lifting required.
-//       • Inside TRACKPAD_DEAD_PX the velocity is zero (dead zone).
-//       • Speed is proportional to offset distance up to TRACKPAD_MAX_PX.
-//       • TRACKPAD_SENS converts offset-px to pan-units per frame.
-//
-//      To tune feel: adjust TRACKPAD_SENS (overall speed) or
-//      TRACKPAD_MAX_PX (how far you pull before hitting max speed).
+//      PURE TOUCH-DELTA mode (PUBG Mobile style):
+//       • Crosshair moves ONLY by the exact pixel delta of the finger
+//         between touchmove events — NOT by offset from a fixed anchor.
+//       • Finger moves 1px → crosshair moves TRACKPAD_SENS pan-units.
+//       • Finger stopped on screen → crosshair freezes. Zero drift.
+//       • Micro-adjustments (slow, small moves) → ultra-precise.
+//       • Fast swipe → fast pan. Proportional, 1:1 with finger speed.
+//       • TRACKPAD_DEAD_PX: per-event noise filter. Tiny jitter from
+//         the touch sensor (<dead zone px/event) is discarded.
 // -----------------------------------------------------------------------
-const TRACKPAD_SENS    = 0.55; // pan-units per offset-px per frame at max
-const TRACKPAD_DEAD_PX = 6;    // px from anchor — movements inside ignored
-const TRACKPAD_MAX_PX  = 55;   // px — offset clamped to this for max speed
+const TRACKPAD_SENS    = 1.4;  // pan-units per CSS-px of finger movement
+const TRACKPAD_DEAD_PX = 2;    // px per event below this = sensor noise, ignored
 
-let tpId   = null;   // active touch identifier (left-half only)
-let tpAX   = 0;      // anchor X (where the finger first landed)
-let tpAY   = 0;      // anchor Y
-let tpCX   = 0;      // current touch X (updated in touchmove)
-let tpCY   = 0;      // current touch Y
+let tpId   = null;   // active touch identifier
+let tpLX   = 0;      // last recorded X (updated every touchmove event)
+let tpLY   = 0;      // last recorded Y
 let tpHintShown = false;
 
 const trackpadHint = document.getElementById("trackpadHint");
@@ -395,19 +389,17 @@ function inLeftHalf(clientX){
 
 function initTrackpad(){
   if(!IS_TOUCH) return;
-  // no visual element needed — the whole left half is the zone
 }
 
-// touchstart — plant the anchor
+// touchstart — record where the finger landed
 canvas.addEventListener("touchstart", e=>{
   if(!IS_TOUCH || G.mode !== "play") return;
   for(const t of e.changedTouches){
     if(tpId !== null) break;
     if(!inLeftHalf(t.clientX)) continue;
     tpId = t.identifier;
-    tpAX = t.clientX;  tpAY = t.clientY;
-    tpCX = t.clientX;  tpCY = t.clientY;
-    // One-time hint
+    tpLX = t.clientX;
+    tpLY = t.clientY;
     if(!tpHintShown && trackpadHint){
       tpHintShown = true;
       trackpadHint.classList.add("show");
@@ -421,48 +413,34 @@ canvas.addEventListener("touchstart", e=>{
   }
 }, {passive:false});
 
-// touchmove — update current position only (velocity applied in game loop)
+// touchmove — apply delta immediately, update last position
 canvas.addEventListener("touchmove", e=>{
   if(tpId === null) return;
   for(const t of e.changedTouches){
     if(t.identifier !== tpId) continue;
-    tpCX = t.clientX;
-    tpCY = t.clientY;
+    const dx = t.clientX - tpLX;
+    const dy = t.clientY - tpLY;
+    tpLX = t.clientX;
+    tpLY = t.clientY;
+    // Per-event noise filter
+    if(Math.abs(dx) < TRACKPAD_DEAD_PX && Math.abs(dy) < TRACKPAD_DEAD_PX) continue;
+    panTargetX += dx * TRACKPAD_SENS;
+    panTargetY += dy * TRACKPAD_SENS;
+    clampPan();
     e.preventDefault();
   }
 }, {passive:false});
 
 function trackpadRelease(e){
   for(const t of e.changedTouches){
-    if(t.identifier === tpId){
-      tpId = null;
-      tpCX = tpAX;  tpCY = tpAY;  // reset offset to zero
-    }
+    if(t.identifier === tpId) tpId = null;
   }
 }
 canvas.addEventListener("touchend",    trackpadRelease, {passive:true});
 canvas.addEventListener("touchcancel", trackpadRelease, {passive:true});
 
-// Called every animation frame by the game loop (via window._applyJoystickPan).
-// Computes the offset vector from anchor → current, applies dead zone,
-// scales to velocity, and accumulates into panTarget.
-window._applyJoystickPan = function(){
-  if(tpId === null) return;
-  let ox = tpCX - tpAX;
-  let oy = tpCY - tpAY;
-  // Dead zone — no movement inside this radius
-  const dist = Math.sqrt(ox*ox + oy*oy);
-  if(dist < TRACKPAD_DEAD_PX) return;
-  // Clamp to max offset, keep direction
-  const clamped = Math.min(dist, TRACKPAD_MAX_PX);
-  const scale   = (clamped - TRACKPAD_DEAD_PX) /
-                  (TRACKPAD_MAX_PX - TRACKPAD_DEAD_PX); // 0…1
-  const nx = ox / dist;  // unit vector
-  const ny = oy / dist;
-  panTargetX += nx * scale * TRACKPAD_MAX_PX * TRACKPAD_SENS;
-  panTargetY += ny * scale * TRACKPAD_MAX_PX * TRACKPAD_SENS;
-  clampPan();
-};
+// Delta is consumed in touchmove directly — no per-frame velocity needed.
+window._applyJoystickPan = function(){};
 
 // ---- Block pull-to-refresh and Safari over-scroll globally,
 //      but ALLOW touchmove inside overlay elements so the user
@@ -494,18 +472,22 @@ window.addEventListener("resize",            checkOrientation);
 window.addEventListener("orientationchange", checkOrientation);
 setTimeout(checkOrientation, 100);
 
-// ---- Fullscreen API — request on DROP IN (touch only) ----------------
+// ---- Simulated fullscreen for iOS Safari.
+//      Applies .fullscreen-canvas directly to the <canvas> element,
+//      fixing it to 100dvw × 100dvh so it covers the full display
+//      including the area Safari's URL bar normally occupies.
 function requestFullscreenIfNeeded(){
   if(!IS_TOUCH) return;
-  const el = document.documentElement;
+  // Try native API (works on Chrome Android / some iOS PWAs)
   try{
-    if(el.requestFullscreen)               el.requestFullscreen({navigationUI:"hide"});
-    else if(el.webkitRequestFullscreen)    el.webkitRequestFullscreen();
-    else if(el.mozRequestFullScreen)       el.mozRequestFullScreen();
-    else if(el.msRequestFullscreen)        el.msRequestFullscreen();
-  } catch(err){
-    // Fullscreen request may be denied silently — not critical
-  }
+    const el = document.documentElement;
+    if(el.requestFullscreen)            el.requestFullscreen({navigationUI:"hide"});
+    else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+  } catch(err){}
+  // CSS override — always applied; covers Safari which ignores the API
+  canvas.classList.add("fullscreen-canvas");
+  // Trigger a resize so scaleX/scaleY recalculate for the new dimensions
+  setTimeout(()=>{ if(typeof resize === "function") resize(); }, 80);
 }
 
 // ============================================================
