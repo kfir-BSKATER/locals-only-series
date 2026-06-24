@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <title>LOCALS ONLY 2: SCOOTER HUNTER</title>
+
+  <!-- Inline safety net: pins html/body to black with zero margin from the
+       very first paint, before the external stylesheet below has loaded,
+       so there is never a flash of the browser's default white background. -->
+  <style>html,body{margin:0;padding:0;background:#000}</style>
+
+  <!-- Google Fonts -->
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;700&display=swap" rel="stylesheet">
+
+  <!-- Game Styles -->
+  <link rel="stylesheet" href="skatepark.css">
+
+  <!-- MQTT client (loaded before the game script so NET can connect) -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/mqtt/5.10.1/mqtt.min.js"></script>
+</head>
+<body>
+
+<div id="stage">
+  <canvas id="game" tabindex="0"></canvas>
+
+  <!-- Static sniper scope overlay, locked dead-center of the viewport -->
+  <div id="scopeOverlay">
+    <svg id="scopeSvg" viewBox="0 0 100 100" preserveAspectRatio="none">
+      <defs>
+        <radialGradient id="scopeVignette" cx="50%" cy="50%" r="72%">
+          <stop offset="0%"  stop-color="#000" stop-opacity="0"/>
+          <stop offset="62%" stop-color="#000" stop-opacity="0"/>
+          <stop offset="100%" stop-color="#000" stop-opacity="0.92"/>
+        </radialGradient>
+      </defs>
+      <!-- Dark donut behind the scope ring: outer rect minus inner circle,
+           drawn as a single path with fill-rule="evenodd" instead of an
+           SVG <mask>. Masking (both the mask="" XML attribute and the CSS
+           mask:url() property) is unreliable in Safari when referencing an
+           SVG mask from within the same SVG document — it can silently
+           fail to apply across part or all of the masked shape, which is
+           exactly the kind of browser-specific rendering gap that showed
+           up as a white band here. Even-odd path filling has no such
+           cross-browser risk: it's basic SVG fill behavior, not a masking
+           feature, supported identically everywhere.
+        -->
+      <path d="M0,0 H100 V100 H0 Z M4,50 A46,46 0 1,0 96,50 A46,46 0 1,0 4,50 Z"
+            fill="#05030a" fill-rule="evenodd"/>
+      <rect x="0" y="0" width="100" height="100" fill="url(#scopeVignette)"/>
+      <circle cx="50" cy="50" r="46.5" fill="none" stroke="#0a0712" stroke-width="1.4"/>
+      <circle cx="50" cy="50" r="44.5" fill="none" stroke="#4e54a3" stroke-width="0.35" opacity="0.55"/>
+    </svg>
+    <!-- Static crosshair, always locked to the physical center -->
+    <svg id="crosshairSvg" viewBox="0 0 100 100">
+      <line x1="50" y1="8"  x2="50" y2="34" stroke="#e6a925" stroke-width="0.6"/>
+      <line x1="50" y1="66" x2="50" y2="92" stroke="#e6a925" stroke-width="0.6"/>
+      <line x1="8"  y1="50" x2="34" y2="50" stroke="#e6a925" stroke-width="0.6"/>
+      <line x1="66" y1="50" x2="92" y2="50" stroke="#e6a925" stroke-width="0.6"/>
+      <circle cx="50" cy="50" r="13" fill="none" stroke="#e6a925" stroke-width="0.5" opacity="0.85"/>
+      <circle cx="50" cy="50" r="1.1" fill="#e6a925"/>
+      <line x1="50" y1="46" x2="50" y2="54" stroke="#e6a925" stroke-width="0.35" opacity="0.7"/>
+      <line x1="46" y1="50" x2="54" y2="50" stroke="#e6a925" stroke-width="0.35" opacity="0.7"/>
+    </svg>
+  </div>
+
+  <div id="hud" style="display:none">
+    <div class="hudBox"><div class="hudLabel">Score</div><div class="hudValue" id="scoreVal">0</div></div>
+    <div class="hudBox" id="timeBox"><div class="hudLabel">Session</div><div class="hudValue" id="timeVal">90</div></div>
+    <div class="hudBox"><div class="hudLabel">Combo</div><div class="hudValue" id="comboVal">×1</div><div id="comboBar"><div id="comboFill"></div></div></div>
+  </div>
+  <div id="liveBoard" style="display:none"></div>
+  <div id="activeLineBar" dir="rtl" style="display:none"></div>
+
+  <!-- Virtual trackpad hint — shows briefly on first touch in left half.
+       The entire left 50% of #stage is the trackpad zone; no visible
+       element is needed during play. -->
+  <div id="trackpadHint"><span>גרור לכוונון</span></div>
+
+  <!-- Portrait orientation guard — shown when device is held upright.
+       The game is landscape-only; this overlay prompts the user to rotate. -->
+  <div id="orientationGuard">
+    <div class="og-icon">🛹</div>
+    <div class="og-text">נא לסובב את המכשיר לרוחב<br>לחוויית משחק מלאה</div>
+    <div class="og-sub">LOCALS ONLY 2 · LANDSCAPE MODE</div>
+  </div>
+
+  <!-- Mobile-only ergonomic thumb HUD: arc of weapon buttons, bottom-right -->
+  <div id="thumbHud" style="display:none">
+    <button id="btnWax" class="toolBtn toolBtnSmall" type="button">
+      <span class="toolIcon">🧈</span>
+      <span class="toolCount" id="waxCount">3</span>
+    </button>
+    <button id="btnShrapnel" class="toolBtn toolBtnSmall" type="button">
+      <span class="toolIcon">🔩</span>
+      <span class="toolCount" id="shrapnelCount">1</span>
+    </button>
+    <button id="btnSkate" class="toolBtn toolBtnMain" type="button">
+      <span class="toolIcon">🛹</span>
+    </button>
+  </div>
+
+  <!-- Desktop weapon strip: shows the active tool + keyboard hints -->
+  <div id="weaponStrip" style="display:none">
+    <div class="wepSlot active" id="wepSlot1" data-key="1"><span class="wepKey">1</span><span class="wepIcon">🛹</span><span class="wepLabel">Skateboard</span></div>
+    <div class="wepSlot" id="wepSlot2" data-key="2"><span class="wepKey">2</span><span class="wepIcon">🧈</span><span class="wepLabel">Wax Shot</span><span class="wepCount" id="wepWaxCount">3</span></div>
+    <div class="wepSlot" id="wepSlot3" data-key="3"><span class="wepKey">3</span><span class="wepIcon">🔩</span><span class="wepLabel">Shrapnel</span><span class="wepCount" id="wepShrapnelCount">1</span></div>
+  </div>
+
+  <div id="flare"><div class="big"></div><div class="sub"></div></div>
+  <div id="announce"></div>
+
+  <div class="overlay" id="startOverlay">
+    <div class="kicker">SCOOTER HUNTER</div>
+    <div class="title">LOCALS<br>ONLY 2<small>סקייטפארק רחובות · TARGET RANGE</small></div>
+    <div class="legend">
+      <div class="chip">🛴 Scooter Kid · 10</div>
+      <div class="chip">🚗 Bimba Kid · 35</div>
+      <div class="chip">🚲 BMX Rider · 75</div>
+    </div>
+    <ul class="rulesList" dir="rtl">
+      <li><b>הוראות:</b> סובבו את המבט עם העכבר (במחשב) או גררו עם אגודל שמאל (במובייל) — הצלב תמיד נעול במרכז.</li>
+      <li><b>המטרה:</b> פגעו במטרות שצצות מהבטון לפני שהן נעלמות בחזרה!</li>
+      <li><b>זמן סשן:</b> 90 שניות.</li>
+      <li>🛹 <b>נשק ראשי:</b> סקייטבורד — תחמושת אינסופית, פגיעה ישירה מפילה מטרה.</li>
+      <li>🧈 <b>Wax Shot:</b> 3 יריות לסיבוב — חיסול מיידי של המטרה ומענק ניקוד כפול (×2).</li>
+      <li>🔩 <b>ברגים:</b> שימוש יחיד לסיבוב — מנקה את כל המטרות על המסך מיידית.</li>
+    </ul>
+    <div id="lobby" dir="rtl">
+      <input id="nameInput" dir="rtl" maxlength="16" placeholder="הכנס שם מקומי" autocomplete="off">
+      <div id="lobbyStatus"><span class="pulse"></span><span>המקומיים בפארק כרגע</span><span class="connTag" id="lobbyConn">מתחבר לפלאזה...</span></div>
+      <ul id="lobbyList"></ul>
+    </div>
+    <button class="btn" id="startBtn">DROP IN</button>
+    <div class="hint">B Skater · סקייטפארק רחובות 🐝</div>
+  </div>
+
+  <div class="overlay hidden" id="endOverlay">
+    <div class="kicker">SESSION OVER</div>
+    <div class="title" style="font-size:25px">RANGE REPORT</div>
+    <div id="board">
+      <div class="pcol" id="p1col"><div class="pname" id="p1name" dir="rtl">אתה</div><div class="pscore" id="finalScore">0</div></div>
+      <div class="pcol" id="p2col"><div class="pname" id="p2name" dir="rtl">שחקן #2</div><div class="pscore dim" id="p2score">—</div></div>
+    </div>
+    <div class="statRow">
+      <div class="stat"><div class="hudLabel">Best</div><div class="hudValue" id="bestScore">0</div></div>
+      <div class="stat"><div class="hudLabel">Max Combo</div><div class="hudValue" id="maxCombo">0</div></div>
+    </div>
+    <div class="rules" id="endQuip"></div>
+    <div id="rematchBox" dir="rtl" style="display:none;flex-direction:column;align-items:center;gap:6px;margin-top:4px">
+      <div id="rematchText" style="font-size:11.5px;font-weight:700;color:var(--green)"></div>
+      <button class="chBtn" id="rematchBtn" style="font-size:11px;padding:7px 16px;border-radius:10px">הזמן לליין נוסף 🛹</button>
+    </div>
+    <button class="btn" id="restartBtn">DROP IN AGAIN</button>
+    <button class="btn2" id="mainMenuBtn">⬅ חזרה למסך הראשי</button>
+    <div class="hint">TIP · STUCK TARGETS BLINK FAST BEFORE THEY BOLT</div>
+  </div>
+  <div class="overlay hidden" id="countOverlay">
+    <div class="kicker" id="countLabel">SYNCED LINE VS —</div>
+    <div id="countNum">3</div>
+  </div>
+</div>
+
+  <!-- CHALLENGE MODAL -->
+  <div id="challengeModal" class="challenge-modal-hidden" style="display:none">
+    <div class="challenge-box">
+      <div class="kicker">LINE CHALLENGE</div>
+      <div id="challengeText" dir="rtl"></div>
+      <div class="challenge-btns">
+        <button class="btn" id="challAcceptBtn">ACCEPT 🛹</button>
+        <button class="btn2" id="challDeclineBtn">DECLINE</button>
+      </div>
+    </div>
+  </div>
+
+
+<!-- Game Script (loaded at end of body; DOM is fully ready) -->
+<script src="skatepark.js"></script>
+
+</body>
+</html>
