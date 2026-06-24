@@ -528,19 +528,18 @@ canvas{
 }
 
 /* ---------------------------------------------------------
-   Simulated fullscreen for iOS Safari — applied to <canvas>
-   via JS on DROP IN. 100dvw/dvh (dynamic viewport units)
-   auto-expand when Safari's URL bar hides, covering the
-   full display. object-fit:contain preserves aspect ratio.
+   Simulated fullscreen for iOS Safari — applied to #stage
+   via JS on DROP IN. Applied to #stage (not canvas) so
+   canvas.getBoundingClientRect() stays accurate for resize().
    --------------------------------------------------------- */
-.fullscreen-canvas{
+.fullscreen-app{
   position:fixed !important;
   top:0 !important;
   left:0 !important;
-  width:100dvw !important;
+  width:100vw !important;
+  height:100vh !important;
   height:100dvh !important;
   z-index:9999 !important;
-  object-fit:contain !important;
   border-radius:0 !important;
 }
 

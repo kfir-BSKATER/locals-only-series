@@ -473,21 +473,17 @@ window.addEventListener("orientationchange", checkOrientation);
 setTimeout(checkOrientation, 100);
 
 // ---- Simulated fullscreen for iOS Safari.
-//      Applies .fullscreen-canvas directly to the <canvas> element,
-//      fixing it to 100dvw × 100dvh so it covers the full display
-//      including the area Safari's URL bar normally occupies.
+//      Applies .fullscreen-app to #stage (NOT to <canvas> directly —
+//      changing canvas position breaks getBoundingClientRect/resize).
 function requestFullscreenIfNeeded(){
   if(!IS_TOUCH) return;
-  // Try native API (works on Chrome Android / some iOS PWAs)
   try{
     const el = document.documentElement;
     if(el.requestFullscreen)            el.requestFullscreen({navigationUI:"hide"});
     else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
   } catch(err){}
-  // CSS override — always applied; covers Safari which ignores the API
-  canvas.classList.add("fullscreen-canvas");
-  // Trigger a resize so scaleX/scaleY recalculate for the new dimensions
-  setTimeout(()=>{ if(typeof resize === "function") resize(); }, 80);
+  const stageEl = document.getElementById("stage");
+  if(stageEl) stageEl.classList.add("fullscreen-app");
 }
 
 // ============================================================
