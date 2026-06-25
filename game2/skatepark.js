@@ -378,6 +378,9 @@ const TRACKPAD_DEAD_PX = 2;    // px per event below this = sensor noise, ignore
 let tpId   = null;   // active touch identifier
 let tpLX   = 0;      // last recorded X (updated every touchmove event)
 let tpLY   = 0;      // last recorded Y
+let tpDriftX = 0;    // normalised direction of last real movement (for micro-drift)
+let tpDriftY = 0;
+let tpLastMoveTime = 0; // timestamp of last real movement event
 let tpHintShown = false;
 
 const trackpadHint = document.getElementById("trackpadHint");
@@ -423,24 +426,51 @@ canvas.addEventListener("touchmove", e=>{
     tpLX = t.clientX;
     tpLY = t.clientY;
     // Per-event noise filter
-    if(Math.abs(dx) < TRACKPAD_DEAD_PX && Math.abs(dy) < TRACKPAD_DEAD_PX) continue;
-    panTargetX += dx * TRACKPAD_SENS;
-    panTargetY += dy * TRACKPAD_SENS;
-    clampPan();
+    if(Math.abs(dx) < TRACKPAD_DEAD_PX && Math.abs(dy) < TRACKPAD_DEAD_PX){
+      // Within noise floor — accumulate into micro-drift direction
+      // (don't update tpDriftX/Y so direction is preserved from last real move)
+    } else {
+      // Real movement — apply delta and update drift direction
+      panTargetX += dx * TRACKPAD_SENS;
+      panTargetY += dy * TRACKPAD_SENS;
+      clampPan();
+      // Record normalised drift direction from this real movement
+      const len = Math.sqrt(dx*dx + dy*dy) || 1;
+      tpDriftX = dx / len;
+      tpDriftY = dy / len;
+      tpLastMoveTime = performance.now();
+    }
     e.preventDefault();
   }
 }, {passive:false});
 
 function trackpadRelease(e){
   for(const t of e.changedTouches){
-    if(t.identifier === tpId) tpId = null;
+    if(t.identifier === tpId){
+      tpId = null;
+      tpDriftX = 0; tpDriftY = 0; // clear drift on release
+    }
   }
 }
 canvas.addEventListener("touchend",    trackpadRelease, {passive:true});
 canvas.addEventListener("touchcancel", trackpadRelease, {passive:true});
 
-// Delta is consumed in touchmove directly — no per-frame velocity needed.
-window._applyJoystickPan = function(){};
+// Called every animation frame by the game loop.
+// When the finger is held still (no touchmove events arriving),
+// applies a micro-drift in the last real-movement direction so the
+// player can creep the crosshair onto a target without lifting the finger.
+// Speed: MICRO_DRIFT_SPEED pan-units/frame — intentionally ultra-slow.
+const MICRO_DRIFT_SPEED  = 1.5;  // pan-units per frame while finger held still
+const MICRO_DRIFT_DELAY  = 80;   // ms of stillness before drift activates
+window._applyJoystickPan = function(){
+  if(tpId === null) return;
+  if(tpDriftX === 0 && tpDriftY === 0) return; // no direction yet
+  const stillMs = performance.now() - tpLastMoveTime;
+  if(stillMs < MICRO_DRIFT_DELAY) return; // wait for finger to settle
+  panTargetX += tpDriftX * MICRO_DRIFT_SPEED;
+  panTargetY += tpDriftY * MICRO_DRIFT_SPEED;
+  clampPan();
+};
 
 // ---- Block pull-to-refresh and Safari over-scroll globally,
 //      but ALLOW touchmove inside overlay elements so the user
@@ -482,6 +512,8 @@ function requestFullscreenIfNeeded(){
     if(el.requestFullscreen)            el.requestFullscreen({navigationUI:"hide"});
     else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
   } catch(err){}
+  // Lock body scroll (removes the 115vh Safari trick padding)
+  document.body.classList.add("game-active");
   const stageEl = document.getElementById("stage");
   if(stageEl) stageEl.classList.add("fullscreen-app");
 }

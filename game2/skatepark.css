@@ -54,6 +54,21 @@ body{
   width:100% !important;
   height:100% !important;
 }
+/* Safari URL-bar trick: on touch devices before game starts, body is
+   slightly taller than the viewport so the user can scroll 1px up —
+   Safari then auto-hides its URL bar and locks to a clean fullscreen.
+   The .game-active class (added on DROP IN) restores the lock.        */
+@media (pointer:coarse){
+  body:not(.game-active){
+    min-height:115vh;
+    overflow-y:auto;
+  }
+  body.game-active{
+    min-height:unset;
+    overflow-y:hidden !important;
+    height:100dvh !important;
+  }
+}
 #stage{
   position:relative;
   /* flex child: take every pixel the body offers, no more, no less */
