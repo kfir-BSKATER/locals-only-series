@@ -360,115 +360,93 @@ window.addEventListener("keydown",(e)=>{
   else if(k==="3") setWeapon("shrapnel");
 });
 
-// ---- Mobile: Virtual Trackpad — left half of screen.
+// ---- Mobile: Virtual Joystick — fixed ring, bottom-left corner.
 //
-//      PURE TOUCH-DELTA mode (PUBG Mobile style):
-//       • Crosshair moves ONLY by the exact pixel delta of the finger
-//         between touchmove events — NOT by offset from a fixed anchor.
-//       • Finger moves 1px → crosshair moves TRACKPAD_SENS pan-units.
-//       • Finger stopped on screen → crosshair freezes. Zero drift.
-//       • Micro-adjustments (slow, small moves) → ultra-precise.
-//       • Fast swipe → fast pan. Proportional, 1:1 with finger speed.
-//       • TRACKPAD_DEAD_PX: per-event noise filter. Tiny jitter from
-//         the touch sensor (<dead zone px/event) is discarded.
+//      Architecture:
+//       • #vjoy is a fixed circle (JOY_RADIUS px) at the bottom-left.
+//       • touchstart inside the ring plants the finger; the knob follows.
+//       • The knob is clamped to JOY_RADIUS so the finger can never leave
+//         the ring — no thumb drift to centre-screen.
+//       • Pan velocity = (knob offset / JOY_RADIUS) * JOY_MAX_SPEED.
+//       • At full deflection the crosshair drifts at JOY_MAX_SPEED u/frame.
+//       • Inside JOY_DEAD_PX no movement — filters thumb tremor.
+//       • velocity applied every frame via window._applyJoystickPan.
+//
+//      Tune: JOY_MAX_SPEED (overall speed), JOY_DEAD_PX (dead zone).
 // -----------------------------------------------------------------------
-const TRACKPAD_SENS    = 1.4;  // pan-units per CSS-px of finger movement
-const TRACKPAD_DEAD_PX = 2;    // px per event below this = sensor noise, ignored
+const JOY_RADIUS    = 65;   // px — half-diameter of the ring (must match CSS width/2)
+const JOY_MAX_SPEED = 22;   // pan-units/frame at full deflection (raised ×2.5 for snappier feel)
+const JOY_DEAD_PX   = 6;    // px of dead zone at knob centre
 
-let tpId   = null;   // active touch identifier
-let tpLX   = 0;      // last recorded X (updated every touchmove event)
-let tpLY   = 0;      // last recorded Y
-let tpDriftX = 0;    // normalised direction of last real movement (for micro-drift)
-let tpDriftY = 0;
-let tpLastMoveTime = 0; // timestamp of last real movement event
-let tpHintShown = false;
+const vjoyEl   = document.getElementById("vjoy");
+const vjoyKnob = document.getElementById("vjoyKnob");
 
-const trackpadHint = document.getElementById("trackpadHint");
+let joyId    = null;  // active touch identifier
+let joyOX    = 0;     // knob offset from ring centre (clamped, in CSS px)
+let joyOY    = 0;
+let joyCX    = 0;     // ring centre on screen
+let joyCY    = 0;
 
-function inLeftHalf(clientX){
-  const r = canvas.getBoundingClientRect();
-  return (clientX - r.left) < r.width * 0.5;
+function updateJoyCentre(){
+  if(!vjoyEl) return;
+  const r = vjoyEl.getBoundingClientRect();
+  joyCX = r.left + r.width  / 2;
+  joyCY = r.top  + r.height / 2;
 }
 
-function initTrackpad(){
+function initTrackpad(){        // called from startup; name kept for compat
   if(!IS_TOUCH) return;
+  if(vjoyEl) vjoyEl.style.display = "block";
+  updateJoyCentre();
 }
 
-// touchstart — record where the finger landed
-canvas.addEventListener("touchstart", e=>{
-  if(!IS_TOUCH || G.mode !== "play") return;
+vjoyEl && vjoyEl.addEventListener("touchstart", e=>{
+  if(joyId !== null) return;
+  audio();
+  const t = e.changedTouches[0];
+  joyId = t.identifier;
+  updateJoyCentre();
+  joyOX = 0; joyOY = 0;
+  e.preventDefault();
+  e.stopPropagation();
+}, {passive:false});
+
+vjoyEl && vjoyEl.addEventListener("touchmove", e=>{
   for(const t of e.changedTouches){
-    if(tpId !== null) break;
-    if(!inLeftHalf(t.clientX)) continue;
-    tpId = t.identifier;
-    tpLX = t.clientX;
-    tpLY = t.clientY;
-    if(!tpHintShown && trackpadHint){
-      tpHintShown = true;
-      trackpadHint.classList.add("show");
-      setTimeout(()=>{
-        trackpadHint.classList.add("fade");
-        setTimeout(()=>{ trackpadHint.classList.remove("show","fade"); }, 350);
-      }, 900);
-    }
+    if(t.identifier !== joyId) continue;
+    let ox = t.clientX - joyCX;
+    let oy = t.clientY - joyCY;
+    const dist = Math.sqrt(ox*ox + oy*oy);
+    if(dist > JOY_RADIUS){ const s = JOY_RADIUS/dist; ox*=s; oy*=s; }
+    joyOX = ox; joyOY = oy;
+    // Move knob visually
+    if(vjoyKnob) vjoyKnob.style.transform =
+      `translate(calc(-50% + ${ox}px), calc(-50% + ${oy}px))`;
     e.preventDefault();
-    break;
+    e.stopPropagation();
   }
 }, {passive:false});
 
-// touchmove — apply delta immediately, update last position
-canvas.addEventListener("touchmove", e=>{
-  if(tpId === null) return;
+function joyRelease(e){
   for(const t of e.changedTouches){
-    if(t.identifier !== tpId) continue;
-    const dx = t.clientX - tpLX;
-    const dy = t.clientY - tpLY;
-    tpLX = t.clientX;
-    tpLY = t.clientY;
-    // Per-event noise filter
-    if(Math.abs(dx) < TRACKPAD_DEAD_PX && Math.abs(dy) < TRACKPAD_DEAD_PX){
-      // Within noise floor — accumulate into micro-drift direction
-      // (don't update tpDriftX/Y so direction is preserved from last real move)
-    } else {
-      // Real movement — apply delta and update drift direction
-      panTargetX += dx * TRACKPAD_SENS;
-      panTargetY += dy * TRACKPAD_SENS;
-      clampPan();
-      // Record normalised drift direction from this real movement
-      const len = Math.sqrt(dx*dx + dy*dy) || 1;
-      tpDriftX = dx / len;
-      tpDriftY = dy / len;
-      tpLastMoveTime = performance.now();
-    }
-    e.preventDefault();
-  }
-}, {passive:false});
-
-function trackpadRelease(e){
-  for(const t of e.changedTouches){
-    if(t.identifier === tpId){
-      tpId = null;
-      tpDriftX = 0; tpDriftY = 0; // clear drift on release
+    if(t.identifier === joyId){
+      joyId = null; joyOX = 0; joyOY = 0;
+      if(vjoyKnob) vjoyKnob.style.transform = "translate(-50%,-50%)";
     }
   }
 }
-canvas.addEventListener("touchend",    trackpadRelease, {passive:true});
-canvas.addEventListener("touchcancel", trackpadRelease, {passive:true});
+vjoyEl && vjoyEl.addEventListener("touchend",    joyRelease, {passive:true});
+vjoyEl && vjoyEl.addEventListener("touchcancel", joyRelease, {passive:true});
 
-// Called every animation frame by the game loop.
-// When the finger is held still (no touchmove events arriving),
-// applies a micro-drift in the last real-movement direction so the
-// player can creep the crosshair onto a target without lifting the finger.
-// Speed: MICRO_DRIFT_SPEED pan-units/frame — intentionally ultra-slow.
-const MICRO_DRIFT_SPEED  = 1.5;  // pan-units per frame while finger held still
-const MICRO_DRIFT_DELAY  = 80;   // ms of stillness before drift activates
+// Called every frame — converts knob offset to pan velocity.
 window._applyJoystickPan = function(){
-  if(tpId === null) return;
-  if(tpDriftX === 0 && tpDriftY === 0) return; // no direction yet
-  const stillMs = performance.now() - tpLastMoveTime;
-  if(stillMs < MICRO_DRIFT_DELAY) return; // wait for finger to settle
-  panTargetX += tpDriftX * MICRO_DRIFT_SPEED;
-  panTargetY += tpDriftY * MICRO_DRIFT_SPEED;
+  if(joyId === null) return;
+  const dist = Math.sqrt(joyOX*joyOX + joyOY*joyOY);
+  if(dist < JOY_DEAD_PX) return;
+  const effective = (dist - JOY_DEAD_PX) / (JOY_RADIUS - JOY_DEAD_PX); // 0…1
+  const speed = effective * JOY_MAX_SPEED;
+  panTargetX += (joyOX / dist) * speed;
+  panTargetY += (joyOY / dist) * speed;
   clampPan();
 };
 
@@ -486,7 +464,7 @@ document.addEventListener("touchmove", e=>{
   e.preventDefault();
 }, {passive:false});
 
-// ---- Orientation guard -----------------------------------------------
+// ---- Orientation guard + Safari URL-bar hiding ----------------------
 const orientGuard = document.getElementById("orientationGuard");
 
 function checkOrientation(){
@@ -494,12 +472,24 @@ function checkOrientation(){
   const isPortrait = window.innerHeight > window.innerWidth;
   if(isPortrait){
     orientGuard.classList.add("show");
+    // Disable DROP IN while portrait (can't play)
+    const btn = document.getElementById("startBtn");
+    if(btn) btn.disabled = true;
   } else {
     orientGuard.classList.remove("show");
+    // Re-enable DROP IN
+    const btn = document.getElementById("startBtn");
+    if(btn) btn.disabled = false;
+    // Scroll 1px to trigger Safari's auto-hide of the URL bar.
+    // Wrapped in rAF so the layout has settled after rotation.
+    requestAnimationFrame(()=>{
+      window.scrollTo(0, 1);
+      updateJoyCentre();
+    });
   }
 }
 window.addEventListener("resize",            checkOrientation);
-window.addEventListener("orientationchange", checkOrientation);
+window.addEventListener("orientationchange", ()=> setTimeout(checkOrientation, 500));
 setTimeout(checkOrientation, 100);
 
 // ---- Simulated fullscreen for iOS Safari.
@@ -1622,6 +1612,112 @@ function drawBackground(){
 }
 
 // Subtle vertical darkening at the very top of the plate so the graffiti
+// ---- Virtual joystick canvas rendering --------------------------------
+// Draws entirely in physical-pixel (identity-transform) space so it sits
+// correctly over the game canvas at any DPR. Reads joyOX/joyOY globals
+// from part4_input_weapons to position the knob.
+function drawJoystick(){
+  if(typeof joyId === "undefined") return; // not yet initialised
+  const dpr   = Math.min(window.devicePixelRatio || 1, 2.5);
+  const R     = 65  * dpr;      // base ring radius in physical px
+  const KR    = 30  * dpr;      // knob radius
+  const PAD   = 18  * dpr;      // margin from edge
+  const cx    = PAD + R;        // ring centre X (physical px, bottom-left)
+  const cy    = canvas.height - PAD - R;  // ring centre Y
+
+  ctx.save();
+  ctx.setTransform(1, 0, 0, 1, 0, 0);
+
+  // ── Base ring ──────────────────────────────────────────────────────
+  // Dark matte fill
+  ctx.beginPath();
+  ctx.arc(cx, cy, R, 0, Math.PI*2);
+  ctx.fillStyle = "rgba(8,6,14,0.72)";
+  ctx.fill();
+
+  // Neon outer stroke
+  ctx.lineWidth = 2.5 * dpr;
+  ctx.strokeStyle = "#39FF14";
+  ctx.shadowColor = "#39FF14";
+  ctx.shadowBlur  = 8 * dpr;
+  ctx.stroke();
+  ctx.shadowBlur  = 0;
+
+  // 4 sniper-style tick marks at N/E/S/W
+  const TICK_LEN  = 10 * dpr;
+  const TICK_GAP  =  6 * dpr;
+  ctx.lineWidth   = 1.5 * dpr;
+  ctx.strokeStyle = "rgba(57,255,20,0.7)";
+  for(let a = 0; a < 4; a++){
+    const angle = a * Math.PI / 2;
+    const cos   = Math.cos(angle), sin = Math.sin(angle);
+    const x0 = cx + cos * (R - TICK_GAP - TICK_LEN);
+    const y0 = cy + sin * (R - TICK_GAP - TICK_LEN);
+    const x1 = cx + cos * (R - TICK_GAP);
+    const y1 = cy + sin * (R - TICK_GAP);
+    ctx.beginPath(); ctx.moveTo(x0,y0); ctx.lineTo(x1,y1); ctx.stroke();
+  }
+
+  // Inner reference circle (faint)
+  ctx.beginPath();
+  ctx.arc(cx, cy, R * 0.42, 0, Math.PI*2);
+  ctx.strokeStyle = "rgba(57,255,20,0.18)";
+  ctx.lineWidth   = 1 * dpr;
+  ctx.stroke();
+
+  // ── Knob ────────────────────────────────────────────────────────────
+  const kx = cx + (typeof joyOX !== "undefined" ? joyOX * dpr : 0);
+  const ky = cy + (typeof joyOY !== "undefined" ? joyOY * dpr : 0);
+
+  // Knob base — dark with subtle radial fill
+  const grad = ctx.createRadialGradient(kx - KR*0.25, ky - KR*0.25, KR*0.05, kx, ky, KR);
+  grad.addColorStop(0, "rgba(60,60,70,0.95)");
+  grad.addColorStop(1, "rgba(15,14,20,0.98)");
+  ctx.beginPath();
+  ctx.arc(kx, ky, KR, 0, Math.PI*2);
+  ctx.fillStyle = grad;
+  ctx.fill();
+
+  // Knob grip — diagonal hatch lines (anti-slip texture)
+  ctx.save();
+  ctx.beginPath(); ctx.arc(kx, ky, KR, 0, Math.PI*2); ctx.clip();
+  ctx.strokeStyle = "rgba(255,255,255,0.08)";
+  ctx.lineWidth   = 1 * dpr;
+  for(let i = -KR; i <= KR*2; i += 5*dpr){
+    ctx.beginPath();
+    ctx.moveTo(kx - KR + i, ky - KR);
+    ctx.lineTo(kx - KR + i - KR, ky + KR);
+    ctx.stroke();
+  }
+  ctx.restore();
+
+  // Racing stripes — 3 neon vertical bars across knob centre
+  ctx.save();
+  ctx.beginPath(); ctx.arc(kx, ky, KR, 0, Math.PI*2); ctx.clip();
+  const stripeW = 4 * dpr;
+  const stripeGap = 9 * dpr;
+  for(let s = -1; s <= 1; s++){
+    const sx = kx + s * stripeGap;
+    ctx.fillStyle = (s === 0)
+      ? "rgba(57,255,20,0.55)"   // centre stripe brighter
+      : "rgba(57,255,20,0.28)";
+    ctx.fillRect(sx - stripeW/2, ky - KR, stripeW, KR*2);
+  }
+  ctx.restore();
+
+  // Knob border — neon ring
+  ctx.beginPath();
+  ctx.arc(kx, ky, KR, 0, Math.PI*2);
+  ctx.strokeStyle = "#39FF14";
+  ctx.lineWidth   = 1.8 * dpr;
+  ctx.shadowColor = "#39FF14";
+  ctx.shadowBlur  = 6 * dpr;
+  ctx.stroke();
+  ctx.shadowBlur  = 0;
+
+  ctx.restore();
+}
+
 // wall doesn't compete too hard with the HUD score readout that sits
 // above the canvas. Kept light — this is a mood pass, not a full scrim.
 function drawTopScrim(){
@@ -1696,6 +1792,10 @@ function frame(now){
   drawOpponentScope(time);
 
   ctx.restore();
+
+  // Draw the virtual joystick on-canvas (touch only) — physical pixels,
+  // after restore() so it's outside shake/scale transforms.
+  if(IS_TOUCH && G.mode === "play") drawJoystick();
 
   // Brute-force global override: reset to the identity transform and
   // paint solid black bars across the absolute top and bottom edges of

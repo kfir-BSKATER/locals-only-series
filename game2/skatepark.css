@@ -214,34 +214,36 @@ canvas{
   border-radius:99px;padding:1px 6px;
 }
 
-/* ---- Virtual trackpad zone — left half, touch devices only.
-        No visual element; the left 50% of #stage is the touch area.
-        A subtle hint label appears on first touch (via JS class).     ---- */
-#trackpadHint{
-  display:none;              /* JS shows briefly on first touch */
+/* ---- Virtual joystick — bottom-left, touch devices only ------------ */
+#vjoy{
+  display:none;                 /* shown by JS on IS_TOUCH */
   position:absolute;
-  left:0;top:0;bottom:0;
-  width:50%;
-  align-items:center;
-  justify-content:center;
+  left:18px; bottom:18px;
+  width:130px; height:130px;
+  border-radius:50%;
+  background:rgba(12,9,19,.45);
+  border:1.5px solid rgba(78,84,163,.5);
+  box-shadow:0 0 22px rgba(0,0,0,.5);
+  touch-action:none;
+  z-index:56;
+  pointer-events:auto;
+  /* subtle amber inner ring */
+  background-image:
+    radial-gradient(circle at 50% 50%,rgba(230,169,37,.08) 38%,transparent 39%),
+    radial-gradient(circle at 50% 50%,transparent 58%,rgba(78,84,163,.18) 59%,rgba(78,84,163,.18) 61%,transparent 62%);
+}
+#vjoyKnob{
+  position:absolute;
+  width:46px; height:46px;
+  border-radius:50%;
+  background:rgba(230,169,37,.25);
+  border:1.5px solid rgba(230,169,37,.75);
+  box-shadow:0 0 14px rgba(230,169,37,.4);
+  top:50%; left:50%;
+  transform:translate(-50%,-50%);
   pointer-events:none;
-  z-index:54;
-  opacity:0;
-  transition:opacity .3s;
+  will-change:transform;
 }
-#trackpadHint.show{ display:flex; opacity:1; }
-#trackpadHint.fade{ opacity:0; }
-#trackpadHint span{
-  font-family:'Space Grotesk',system-ui,sans-serif;
-  font-size:10px;
-  letter-spacing:.18em;
-  color:rgba(243,239,255,.35);
-  text-transform:uppercase;
-  font-weight:700;
-  writing-mode:vertical-rl;
-  transform:rotate(180deg);
-}
-
 /* ---- Portrait orientation guard ---- */
 #orientationGuard{
   display:none;           /* JS shows this on portrait touch */
@@ -535,6 +537,26 @@ canvas{
   #weaponStrip{ display:none !important; }
 }
 
+/* Touch + landscape: lock the entire viewport so Safari's URL bar
+   cannot push content down after device rotation.
+   position:fixed + 100dvw/dvh (dynamic viewport units) ensures the
+   game fills every available pixel even as Safari animates its chrome. */
+@media (pointer:coarse) and (orientation:landscape){
+  body, #stage{
+    position:fixed !important;
+    top:0 !important; left:0 !important;
+    width:100dvw !important;
+    height:100dvh !important;
+    overflow:hidden !important;
+    z-index:1 !important;
+  }
+  canvas{
+    position:absolute !important;
+    inset:0 !important;
+    width:100% !important;
+    height:100% !important;
+  }
+}
 
 @media (prefers-reduced-motion: reduce){
   #flare.show{animation-duration:.01s}
