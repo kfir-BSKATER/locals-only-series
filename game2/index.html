@@ -72,10 +72,10 @@
   <div id="liveBoard" style="display:none"></div>
   <div id="activeLineBar" dir="rtl" style="display:none"></div>
 
-  <!-- Virtual trackpad hint — shows briefly on first touch in left half.
-       The entire left 50% of #stage is the trackpad zone; no visible
-       element is needed during play. -->
-  <div id="trackpadHint"><span>גרור לכוונון</span></div>
+  <!-- Virtual joystick — bottom-left corner, touch only.
+       A fixed ring; the knob tracks the finger up to JOY_RADIUS px.
+       Holding at the edge produces a continuous slow drift.           -->
+  <div id="vjoy"><div id="vjoyKnob"></div></div>
 
   <!-- Portrait orientation guard — shown when device is held upright.
        The game is landscape-only; this overlay prompts the user to rotate. -->
