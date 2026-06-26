@@ -1588,12 +1588,10 @@ function drawBackground(){
   const dx = Math.round((VIEW_W - drawW) / 2 - G.pan.x);
   const dy = Math.round((VIEW_H - drawH) / 2 - G.pan.y);
 
-  // Solid black base — covers any margin exposed at extreme pan (or the
-  // whole frame before the image has loaded) with the same black used by
-  // the scope's vignette, so an over-panned edge reads as part of the
-  // scope housing rather than a visible seam.
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+  // Clear to transparent so the #stage CSS watermark shows through the
+  // scope's frame areas. The guard strips below keep the image edges
+  // clean. #stage background-color (#0f0e13) acts as the "black" fallback.
+  ctx.clearRect(0, 0, VIEW_W, VIEW_H);
 
   if(!imgReady) return;
 
