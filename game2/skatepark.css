@@ -318,15 +318,14 @@ canvas{
 @media (pointer:coarse){
   #instructionBox{ display:block; }
 }
-/* Arrow: a vertical CSS line with arrowhead at top, rising from the
-   top-left corner of the box straight up toward Safari's tab buttons.
-   Built from a pseudo-element on .ib-arrow span so no extra HTML needed. */
+/* Arrow: vertical CSS line with arrowhead rising from the TOP-LEFT
+   corner of the box straight up toward Safari's tab buttons. */
 .ib-arrow{
   position:absolute;
   top:-70px;                       /* rise 70px above the box */
-  left:18px;                       /* aligned to left quarter of box */
+  left:-2px;                       /* exact left edge of the box */
   width:0;
-  height:60px;                     /* line length */
+  height:60px;
   border-left:3px solid var(--brand-amber);
   filter:drop-shadow(0 0 5px rgba(230,169,37,.8));
   pointer-events:none;

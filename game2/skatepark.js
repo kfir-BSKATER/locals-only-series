@@ -1599,17 +1599,16 @@ function drawBackground(){
 
   // Guard strips: a 2px black overdraw hugging whichever image edges are
   // exposed inside the viewport, biased to overlap slightly onto the
-  // photo itself. This is a second line of defense against any residual
-  // 1px seam from drawImage's internal rounding/anti-aliasing — belt and
-  // suspenders alongside the integer-snapped dx/dy above.
+  // Clear the margin areas around the photo (instead of painting them black)
+  // so the #stage CSS watermark shows through. The scope SVG overlay
+  // already darkens the frame visually — no canvas black fill needed.
   const GUARD = 2;
   const imgRight = dx + drawW;
   const imgBottom = dy + drawH;
-  ctx.fillStyle = "#000";
-  if(dx > 0)            ctx.fillRect(0, 0, dx + GUARD, VIEW_H);
-  if(imgRight < VIEW_W)  ctx.fillRect(imgRight - GUARD, 0, VIEW_W - imgRight + GUARD, VIEW_H);
-  if(dy > 0)             ctx.fillRect(0, 0, VIEW_W, dy + GUARD);
-  if(imgBottom < VIEW_H) ctx.fillRect(0, imgBottom - GUARD, VIEW_W, VIEW_H - imgBottom + GUARD);
+  if(dx > 0)             ctx.clearRect(0, 0, dx + GUARD, VIEW_H);
+  if(imgRight < VIEW_W)  ctx.clearRect(imgRight - GUARD, 0, VIEW_W - imgRight + GUARD, VIEW_H);
+  if(dy > 0)             ctx.clearRect(0, 0, VIEW_W, dy + GUARD);
+  if(imgBottom < VIEW_H) ctx.clearRect(0, imgBottom - GUARD, VIEW_W, VIEW_H - imgBottom + GUARD);
 }
 
 // Subtle vertical darkening at the very top of the plate so the graffiti
@@ -1800,14 +1799,11 @@ function frame(now){
   // paint solid black bars across the absolute top and bottom edges of
   // the real canvas, in raw physical pixel coordinates. This runs after
   // ctx.restore() — fully outside the screen-shake save/translate scope
-  // and independent of scaleX/scaleY — so it is the literal last thing
-  // touching the canvas each frame, unconditionally overwriting whatever
-  // pixel leak (SVG mask quirks, sub-pixel scale rounding, browser-
-  // specific edge cases) might otherwise show through at either edge.
+  // Clear the very top and bottom edges (sub-pixel seam fix, now with
+  // clearRect instead of black fill so watermark shows through).
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#000000";
-  ctx.fillRect(0, canvas.height - 30, canvas.width, 30); // bottom edge guard
-  ctx.fillRect(0, 0, canvas.width, 30);                   // top edge guard
+  ctx.clearRect(0, canvas.height - 4, canvas.width, 4); // bottom edge
+  ctx.clearRect(0, 0, canvas.width, 4);                   // top edge
 
   requestAnimationFrame(frame);
 }
