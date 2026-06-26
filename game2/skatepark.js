@@ -508,55 +508,6 @@ function requestFullscreenIfNeeded(){
   if(stageEl) stageEl.classList.add("fullscreen-app");
 }
 
-// ---- Manual Fullscreen button (lobby) --------------------------------
-// iOS Safari does NOT support requestFullscreen from the browser (only
-// from an installed PWA). The button still works on Chrome/Android
-// (native API), and on Safari it applies the CSS fixed-overlay fallback
-// which is the closest possible approximation.
-function toggleFullscreen(){
-  const el = document.documentElement;
-  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
-  if(isFs){
-    // Exit
-    try{
-      if(document.exitFullscreen)             document.exitFullscreen();
-      else if(document.webkitExitFullscreen)  document.webkitExitFullscreen();
-    } catch(e){}
-    document.getElementById("stage")?.classList.remove("fullscreen-app");
-    document.body.classList.remove("game-active");
-    el.classList.remove("fullscreen-app");
-    const btn = document.getElementById("btnFullscreen");
-    if(btn) btn.textContent = "⛶ FULLSCREEN";
-  } else {
-    // Enter — try native API first (works on Chrome/Android)
-    try{
-      if(el.requestFullscreen)            el.requestFullscreen({navigationUI:"hide"});
-      else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
-    } catch(e){}
-    // CSS override — applied unconditionally so Safari gets full coverage
-    // even though its native API is a no-op from a browser context.
-    // Applied to documentElement, body AND #stage for maximum specificity.
-    el.classList.add("fullscreen-app");
-    document.body.classList.add("game-active");
-    document.getElementById("stage")?.classList.add("fullscreen-app");
-    window.scrollTo(0, 1);
-    const btn = document.getElementById("btnFullscreen");
-    if(btn) btn.textContent = "⛶ EXIT FS";
-  }
-}
-{
-  const btn = document.getElementById("btnFullscreen");
-  if(btn){
-    // touchstart fires ~300ms earlier than click on iOS Safari,
-    // and bypasses the "ghost click" delay that can swallow the event.
-    const evt = ("ontouchstart" in window) ? "touchstart" : "click";
-    btn.addEventListener(evt, function(e){
-      e.preventDefault();
-      toggleFullscreen();
-    });
-  }
-}
-
 // ============================================================
 // WEAPON SELECTION + FIRING
 // ============================================================
@@ -835,6 +786,8 @@ function start(){
   if(NET.room && !NET.starting) leaveRoom();   // solo restart exits the synced room
   reset(); G.mode="play";
   startOverlay.classList.add("hidden"); endOverlay.classList.add("hidden");
+  // Hide the mobile instruction box once play begins
+  document.getElementById("instructionBox")?.classList.add("hidden");
   hud.style.display="flex";
   applyControlScheme();
   setDrone(true);
@@ -874,6 +827,7 @@ function backToMenu(){
   liveBoardEl.style.display="none";
   endOverlay.classList.add("hidden");
   startOverlay.classList.remove("hidden");
+  document.getElementById("instructionBox")?.classList.remove("hidden");
   applyControlScheme();
   setDrone(false);
   beat(); renderRoster();

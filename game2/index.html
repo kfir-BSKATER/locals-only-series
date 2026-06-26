@@ -72,6 +72,21 @@
   <div id="liveBoard" style="display:none"></div>
   <div id="activeLineBar" dir="rtl" style="display:none"></div>
 
+  <!-- Branded instruction box — top-right corner, touch devices only.
+       Visible in the lobby, hidden when game starts (JS adds .hidden).
+       Arrow points up-left toward Safari's aA button in landscape.   -->
+  <div id="instructionBox" dir="rtl">
+    <div class="ib-arrow">↖</div>
+    <div class="ib-body">
+      <div class="ib-title">🛹 משחק מסך מלא</div>
+      <ol class="ib-list">
+        <li>סובבו לרוחב <span class="ib-amber">Landscape</span> 📱</li>
+        <li><span class="ib-amber">אייפון Safari:</span> לחצו <span class="ib-purple">aA</span> ← <span class="ib-purple">הסתר סרגל</span></li>
+        <li><span class="ib-amber">אנדרואיד Chrome:</span> ⋮ ← הוסף למסך הבית</li>
+      </ol>
+    </div>
+  </div>
+
   <!-- Virtual joystick — bottom-left corner, touch only.
        A fixed ring; the knob tracks the finger up to JOY_RADIUS px.
        Holding at the edge produces a continuous slow drift.           -->
@@ -132,16 +147,6 @@
       <ul id="lobbyList"></ul>
     </div>
     <button class="btn" id="startBtn">DROP IN</button>
-    <div class="mobile-tip" id="mobileTip">
-      <div class="mobile-tip__icon">🛹</div>
-      <div class="mobile-tip__text">
-        <b>לחוויית משחק מושלמת:</b><br>
-        1. סובבו למצב לרוחב 📱<br>
-        2. <b>אייפון Safari:</b> לחצו <b>aA</b> בשורת הכתובת ← <b>הסתר סרגל</b><br>
-        3. <b>אנדרואיד Chrome:</b> 3 נקודות ← <b>הוסף למסך הבית</b> 🚀
-      </div>
-    </div>
-    <div class="hint">B Skater · סקייטפארק רחובות 🐝</div>
   </div>
 
   <div class="overlay hidden" id="endOverlay">
