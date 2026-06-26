@@ -508,6 +508,43 @@ function requestFullscreenIfNeeded(){
   if(stageEl) stageEl.classList.add("fullscreen-app");
 }
 
+// ---- Manual Fullscreen button (lobby) --------------------------------
+// iOS Safari does NOT support requestFullscreen from the browser (only
+// from an installed PWA). The button still works on Chrome/Android
+// (native API), and on Safari it applies the CSS fixed-overlay fallback
+// which is the closest possible approximation.
+function toggleFullscreen(){
+  const el = document.documentElement;
+  const isFs = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if(isFs){
+    // Exit
+    try{
+      if(document.exitFullscreen)             document.exitFullscreen();
+      else if(document.webkitExitFullscreen)  document.webkitExitFullscreen();
+    } catch(e){}
+    document.getElementById("stage")?.classList.remove("fullscreen-app");
+    document.body.classList.remove("game-active");
+    const btn = document.getElementById("btnFullscreen");
+    if(btn) btn.textContent = "⛶ FULLSCREEN";
+  } else {
+    // Enter
+    try{
+      if(el.requestFullscreen)            el.requestFullscreen({navigationUI:"hide"});
+      else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
+    } catch(e){}
+    // CSS fallback — always applied (covers Safari where the API is a no-op)
+    document.getElementById("stage")?.classList.add("fullscreen-app");
+    document.body.classList.add("game-active");
+    window.scrollTo(0, 1);
+    const btn = document.getElementById("btnFullscreen");
+    if(btn) btn.textContent = "⛶ EXIT FS";
+  }
+}
+{
+  const btn = document.getElementById("btnFullscreen");
+  if(btn) btn.addEventListener("click", toggleFullscreen);
+}
+
 // ============================================================
 // WEAPON SELECTION + FIRING
 // ============================================================

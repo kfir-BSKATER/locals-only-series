@@ -284,7 +284,30 @@ canvas{
   color:var(--dim);
   font-weight:500;
 }
-
+/* ---- Fullscreen button — neon extreme sports style --------------- */
+.btn-fs{
+  display:none;            /* hidden on desktop — only touch needs it */
+  font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;
+  font-size:clamp(10px,1.8vh,13px);
+  font-weight:900;
+  letter-spacing:.06em;
+  color:#0a1a00;
+  background:#39FF14;
+  border:none;
+  border-radius:10px;
+  padding:clamp(6px,1.2vh,10px) 20px;
+  cursor:pointer;
+  box-shadow:0 0 18px rgba(57,255,20,.6), 0 3px 0 #1a7a00;
+  transition:transform .08s, box-shadow .08s;
+  margin-top:2px;
+}
+.btn-fs:active{
+  transform:translateY(2px);
+  box-shadow:0 0 10px rgba(57,255,20,.4), 0 1px 0 #1a7a00;
+}
+@media (pointer:coarse){
+  .btn-fs{ display:block; }
+}
 
 #thumbHud{
   position:absolute;
