@@ -601,6 +601,16 @@ canvas{
   height:100dvh !important;
   z-index:9999 !important;
   border-radius:0 !important;
+  overflow:hidden !important;
+  margin:0 !important;
+  padding:0 !important;
+}
+/* When applied to <html> root — kill any remaining scroll possibility */
+html.fullscreen-app,
+html.fullscreen-app body{
+  overflow:hidden !important;
+  width:100dvw !important;
+  height:100dvh !important;
 }
 
 /* ---------------------------------------------------------

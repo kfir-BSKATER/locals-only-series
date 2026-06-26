@@ -524,17 +524,21 @@ function toggleFullscreen(){
     } catch(e){}
     document.getElementById("stage")?.classList.remove("fullscreen-app");
     document.body.classList.remove("game-active");
+    el.classList.remove("fullscreen-app");
     const btn = document.getElementById("btnFullscreen");
     if(btn) btn.textContent = "⛶ FULLSCREEN";
   } else {
-    // Enter
+    // Enter — try native API first (works on Chrome/Android)
     try{
       if(el.requestFullscreen)            el.requestFullscreen({navigationUI:"hide"});
       else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen();
     } catch(e){}
-    // CSS fallback — always applied (covers Safari where the API is a no-op)
-    document.getElementById("stage")?.classList.add("fullscreen-app");
+    // CSS override — applied unconditionally so Safari gets full coverage
+    // even though its native API is a no-op from a browser context.
+    // Applied to documentElement, body AND #stage for maximum specificity.
+    el.classList.add("fullscreen-app");
     document.body.classList.add("game-active");
+    document.getElementById("stage")?.classList.add("fullscreen-app");
     window.scrollTo(0, 1);
     const btn = document.getElementById("btnFullscreen");
     if(btn) btn.textContent = "⛶ EXIT FS";
@@ -542,7 +546,15 @@ function toggleFullscreen(){
 }
 {
   const btn = document.getElementById("btnFullscreen");
-  if(btn) btn.addEventListener("click", toggleFullscreen);
+  if(btn){
+    // touchstart fires ~300ms earlier than click on iOS Safari,
+    // and bypasses the "ghost click" delay that can swallow the event.
+    const evt = ("ontouchstart" in window) ? "touchstart" : "click";
+    btn.addEventListener(evt, function(e){
+      e.preventDefault();
+      toggleFullscreen();
+    });
+  }
 }
 
 // ============================================================
