@@ -1757,15 +1757,13 @@ function frame(now){
   // strips, etc. — those only help with the photo's own edge, not this).
   // Resetting to the identity transform and filling in raw physical pixels
   // sidesteps the scale math entirely and guarantees 100% canvas coverage.
+  // Using clearRect (transparent) instead of fillRect(#000) so the #stage
+  // watermark CSS background shows through the scope's black frame areas.
+  // The #stage background-color (#0f0e13) handles the sub-pixel seam fix.
   ctx.setTransform(1, 0, 0, 1, 0, 0);
-  ctx.fillStyle = "#000";
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
 
-  // Physical-pixel canvas, logical VIEW_W/VIEW_H coordinate space. No
-  // clearRect here — clearing resets to transparent, which would let the
-  // page background show through the exact same sub-pixel rounding gap
-  // the black fill above just covered. The black fill IS this frame's
-  // clear; everything below draws opaquely on top of it.
+  // Physical-pixel canvas, logical VIEW_W/VIEW_H coordinate space.
   ctx.setTransform(scaleX, 0, 0, scaleY, 0, 0);
 
   // Screen shake: small random translate driven by G.shake, decayed in

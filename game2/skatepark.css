@@ -298,17 +298,18 @@ canvas{
 }
 /* ---- Instruction box — branded sticker style, top-right, touch only ---- */
 #instructionBox{
-  display:none;                    /* desktop: hidden */
+  display:none;
   position:absolute;
-  top:10px; right:10px;
+  top:80px;                        /* below browser tab bar */
+  right:10px;
   width:clamp(170px, 38vw, 215px);
-  background:rgba(10,8,18,.85);
+  background:rgba(10,8,18,.88);
   border:1.5px solid var(--brand-amber);
   border-radius:10px;
-  padding:9px 11px 10px;
+  padding:10px 12px 11px;
   direction:rtl;
   text-align:right;
-  transform:rotate(2deg);          /* skate-sticker tilt */
+  transform:rotate(2deg);
   z-index:101;
   box-shadow:0 0 16px rgba(230,169,37,.3), 2px 4px 14px rgba(0,0,0,.6);
   pointer-events:none;
@@ -317,20 +318,17 @@ canvas{
 @media (pointer:coarse){
   #instructionBox{ display:block; }
 }
-/* Arrow ↗ from top-LEFT corner of the box pointing toward Safari's
-   tabs/menu button which sits in the TOP-RIGHT of the Safari toolbar.
-   The box is in the top-right; the arrow comes off the top-left corner
-   and curves up-right toward the tab-switcher icon.                    */
+/* Arrow points straight up from top-left corner of the box toward
+   Safari's tabs/window button in the top area of the browser chrome. */
 .ib-arrow{
   position:absolute;
-  top:-22px;
-  left:-4px;                       /* left corner of the box */
+  top:-26px;
+  left:10px;
   font-size:22px;
   color:var(--brand-amber);
-  text-shadow:0 0 10px rgba(230,169,37,.8);
+  text-shadow:0 0 10px rgba(230,169,37,.9);
   pointer-events:none;
   line-height:1;
-  /* no flip needed — ↗ already points right-and-up */
 }
 .ib-title{
   font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;
@@ -338,20 +336,22 @@ canvas{
   font-weight:900;
   color:var(--brand-amber);
   letter-spacing:.04em;
-  margin-bottom:5px;
+  margin-bottom:6px;
 }
 .ib-list{
   list-style:none;
   padding:0; margin:0;
-  display:flex; flex-direction:column; gap:4px;
+  display:flex; flex-direction:column; gap:5px;
 }
 .ib-list li{
   font-size:clamp(8px,1.7vw,10px);
-  color:rgba(243,239,255,.82);
-  line-height:1.45;
+  color:#ffffff;                   /* white for maximum readability */
+  line-height:1.5;
 }
+/* amber ONLY for platform names (Safari / Chrome) */
 .ib-amber{ color:var(--brand-amber); font-weight:700; }
-.ib-purple{ color:var(--brand-purple); font-weight:700; }
+/* purple removed — was unreadable on dark bg; use white instead */
+.ib-purple{ color:#ffffff; font-weight:700; }
 
 #thumbHud{
   position:absolute;
