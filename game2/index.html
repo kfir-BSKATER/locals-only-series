@@ -172,6 +172,39 @@
     <div class="kicker" id="countLabel">SYNCED LINE VS —</div>
     <div id="countNum">3</div>
   </div>
+
+  <!-- TOURNAMENT: Pre-game banner — announces the tournament before round 1 -->
+  <div class="overlay hidden" id="tnPreOverlay">
+    <div class="kicker" style="color:var(--brand-purple);letter-spacing:.4em">LOCALS ONLY TOURNAMENT</div>
+    <div class="title" style="font-size:clamp(22px,5vw,36px)">הטוב<br>משלוש 🏆</div>
+    <div class="title small" style="margin-top:6px">Best of 3 Rounds — כל שחקן בפינה שלו</div>
+    <div class="legend" style="margin:8px 0">
+      <div class="chip">🛹 שלב 1 — ציד מטרות</div>
+      <div class="chip">🎯 שלב 2 — דו-קרב טורים</div>
+      <div class="chip">🔥 שלב 3 — אקסטרים</div>
+    </div>
+    <button class="btn" id="tn-start-btn">DROP IN לטורניר 🛹</button>
+    <div class="hint" style="margin-top:8px">שני השחקנים חייבים להיות מחוברים לאותו חדר</div>
+  </div>
+
+  <!-- TOURNAMENT: Between-round overlay — shown after each round ends -->
+  <div class="overlay hidden" id="betweenRoundOverlay">
+    <div class="kicker" style="color:var(--brand-purple)">סיום שלב 1</div>
+    <div class="title" style="font-size:clamp(18px,4vw,28px)">תוצאות הסיבוב</div>
+    <div class="statRow" style="margin:10px 0 14px">
+      <div class="stat">
+        <div class="hudLabel">אתה</div>
+        <div class="hudValue" id="tn-my-score" style="color:var(--brand-amber);font-size:28px">0</div>
+      </div>
+      <div class="stat">
+        <div class="hudLabel">יריב</div>
+        <div class="hudValue" id="tn-opp-score" style="color:var(--brand-purple);font-size:28px">...</div>
+      </div>
+    </div>
+    <button class="btn" id="tn-continue-btn">המשך לשלב 2 🎯</button>
+    <div class="hint hidden" id="tn-wait-msg" style="font-size:14px;margin-top:10px"></div>
+  </div>
+
 </div>
 
   <!-- CHALLENGE MODAL -->
