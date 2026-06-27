@@ -39,6 +39,7 @@ const TOURNAMENT = {
   scores:  { p1: [], p2: [] },  // accumulated per-round scores
   myReady: false,     // this client clicked "continue"
   oppoReady: false,   // opponent sent tn_ready
+  _advancing: false,  // guard: prevents advanceTournament firing twice
 };
 
 // ============================================================
@@ -1058,18 +1059,23 @@ function reset(){
 function start(){
   audio();
   requestFullscreenIfNeeded();          // enter fullscreen on DROP IN (touch only)
-  if(NET.room && !NET.starting) leaveRoom();   // solo restart exits the synced room
 
-  // If two players are in a room together, every session is a tournament round.
-  // Set phase to round1 here so all three MQTT entry paths are covered without
-  // touching any of the network code.
-  if(NET.room){
-    TOURNAMENT.phase  = "round1";
-    TOURNAMENT.scores = {p1:[], p2:[]};
-    TOURNAMENT.myReady   = false;
-    TOURNAMENT.oppoReady = false;
-  } else {
-    TOURNAMENT.phase = "pre";  // solo play — no tournament
+  // During a tournament inter-round advance the room must stay alive.
+  // Only leave the room if this is a genuine solo restart (no room) or
+  // the player manually restarted outside of a tournament context.
+  const isTournamentAdvance = (TOURNAMENT.phase === "round2" || TOURNAMENT.phase === "round3");
+  if(NET.room && !NET.starting && !isTournamentAdvance) leaveRoom();
+
+  // Set tournament phase — but never overwrite an already-set round2/3 phase.
+  if(!isTournamentAdvance){
+    if(NET.room){
+      TOURNAMENT.phase  = "round1";
+      TOURNAMENT.scores = {p1:[], p2:[]};
+      TOURNAMENT.myReady   = false;
+      TOURNAMENT.oppoReady = false;
+    } else {
+      TOURNAMENT.phase = "pre";  // solo play — no tournament
+    }
   }
 
   reset(); G.mode="play";
@@ -1104,9 +1110,9 @@ function end(){
   setDrone(false);
   thump(140,55,0.35,0.12);
 
-  // Tournament branch: if we are in round1, save score and show
-  // the between-round overlay instead of the regular end screen.
-  if(TOURNAMENT.phase==="round1"){
+  // Tournament branch: save score and show between-round screen
+  // instead of the regular end/report screen.
+  if(TOURNAMENT.phase==="round1" || TOURNAMENT.phase==="round2"){
     TOURNAMENT.scores.p1.push(G.score);
     if(NET.oppoFinal!=null) TOURNAMENT.scores.p2.push(NET.oppoFinal);
     showBetweenRoundOverlay();
@@ -1253,7 +1259,16 @@ function showBetweenRoundOverlay(){
   const ov = document.getElementById("betweenRoundOverlay");
   if(!ov) return;
 
-  // Show this client's score and the opponent's if already received
+  // Update the kicker to reflect which round just ended
+  const kicker = ov.querySelector(".kicker");
+  if(kicker){
+    kicker.textContent = TOURNAMENT.phase==="round1" ? "סיום שלב 1" : "סיום שלב 2";
+  }
+  const contBtn = document.getElementById("tn-continue-btn");
+  if(contBtn){
+    contBtn.textContent = TOURNAMENT.phase==="round1" ? "המשך לשלב 2 🎯" : "המשך לשלב 3 🔥";
+  }
+
   const myScoreEl  = document.getElementById("tn-my-score");
   const oppScoreEl = document.getElementById("tn-opp-score");
   if(myScoreEl)  myScoreEl.textContent  = G.score.toLocaleString();
@@ -1270,18 +1285,28 @@ function tnUpdateReadyUI(){
   const wait = document.getElementById("tn-wait-msg");
   if(!btn || !wait) return;
 
+  const nextPhaseLabel = TOURNAMENT.phase==="round1" ? "שלב 2 🎯" : "שלב 3 🔥";
+
   if(!TOURNAMENT.myReady){
     btn.style.display  = "block";
     wait.style.display = "none";
   } else {
     btn.style.display  = "none";
-    wait.textContent   = TOURNAMENT.oppoReady ? "יוצאים לשלב 2! 🛹" : "ממתין ליריב... ⏳";
+    wait.textContent   = TOURNAMENT.oppoReady
+      ? ("יוצאים ל"+nextPhaseLabel+" 🛹")
+      : "ממתין ליריב... ⏳";
+    wait.classList.remove("hidden");
     wait.style.display = "block";
   }
 
-  // Both ready — advance
-  if(TOURNAMENT.myReady && TOURNAMENT.oppoReady){
-    setTimeout(advanceTournament, 800);
+  // Both ready — advance once, with a guard flag so setTimeout
+  // from two rapid calls doesn't fire advanceTournament twice.
+  if(TOURNAMENT.myReady && TOURNAMENT.oppoReady && !TOURNAMENT._advancing){
+    TOURNAMENT._advancing = true;
+    setTimeout(()=>{
+      advanceTournament();
+      TOURNAMENT._advancing = false;
+    }, 800);
   }
 }
 
@@ -1294,21 +1319,27 @@ function tnClickContinue(){
 function advanceTournament(){
   const ov = document.getElementById("betweenRoundOverlay");
   if(ov) ov.classList.add("hidden");
-  TOURNAMENT.phase = "round2";
-  TOURNAMENT.myReady = false;
+
+  TOURNAMENT.phase     = "round2";   // set BEFORE start() runs
+  TOURNAMENT.myReady   = false;
   TOURNAMENT.oppoReady = false;
-  // Full game reset — G.mode will go through lobby → play as usual
+
+  // Use NET.starting flag so start() knows this is a controlled
+  // tournament advance — not a solo restart — and keeps the room alive.
+  NET.starting = true;
   reset();
-  G.mode = "start";
-  startOverlay.classList.remove("hidden");
-  hud.style.display = "none";
+  G.mode = "play";
+  if(TOURNAMENT.phase==="round2") initRound2();
+  // Update UI directly — no intermediate lobby screen between rounds
+  startOverlay.classList.add("hidden");
+  endOverlay.classList.add("hidden");
+  hud.style.display = "flex";
   applyControlScheme();
+  setDrone(true);
   beat();
-  // Auto-start round2 after a short countdown (both players already in room)
-  setTimeout(()=>{
-    const btn = document.getElementById("startBtn");
-    if(btn) btn.click();
-  }, 1200);
+  NET.starting = false;
+  // Announce round start
+  setTimeout(()=>{ announce("🎯 שלב 2 — דו-קרב טורים!"); }, 300);
 }
 
 // Start the tournament from round1
@@ -2020,6 +2051,11 @@ function onRoomMsg(m){
   else if(m.t==="end"){
     NET.oppoFinal=m.score; updateBoard();
     if(NET.lineNames&&m.name){ delete NET.lineNames[m.name]; renderActiveLine(); }
+    // Update the between-round overlay opponent score if it's currently visible
+    const oppScoreEl = document.getElementById("tn-opp-score");
+    if(oppScoreEl && oppScoreEl.textContent==="..."){
+      oppScoreEl.textContent = m.score.toLocaleString();
+    }
   }
   else if(m.t==="fire"){
     // purely cosmetic ack from the opponent's weapon — no local state change needed
