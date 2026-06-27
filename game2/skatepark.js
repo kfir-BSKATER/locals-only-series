@@ -285,6 +285,7 @@ const G = {
   folding:[],      // targets currently folding back into the concrete (outro anim)
   particles:[], popups:[], projectiles:[],
   spawnTimer:0, shake:0, hitstop:0, elapsed:0,
+  birds:[], leaves:[],   // ambient juice for round1
   flaredAt:new Set(),
   weapon:"skate",                       // "skate" | "wax" | "shrapnel"
   ammo:{ wax:WAX_START, shrapnel:SHRAPNEL_START },
@@ -578,11 +579,13 @@ function fireWeapon(){
 
 // ---- Weapon 1: Skateboard — unlimited ammo, direct hit drops a target ----
 function fireSkateboard(){
-  const hit = pickTargetAtCrosshair();
+  const hit = TOURNAMENT.phase==="round2" ? pickR2TargetAtCrosshair() : pickTargetAtCrosshair();
   flashMuzzle();
   spawnBoardProjectile(hit);
-  if(hit) resolveHit(hit, "skate");
-  else snapSound(0);
+  if(hit){
+    if(TOURNAMENT.phase==="round2") resolveR2Hit(hit);
+    else resolveHit(hit, "skate");
+  } else snapSound(0);
   if(NET.room) netPub(roomTopic(),{t:"fire", w:"skate"});
 }
 
@@ -750,6 +753,260 @@ function spawnBoardProjectile(hitTarget){
     spin: Math.random()<0.5 ? -1 : 1,
   });
 }
+
+// ============================================================
+// ROUND 1 JUICE — ambient birds and falling leaves
+// ============================================================
+// Birds and leaves live in G.birds / G.leaves, spawned here and
+// updated in updateJuice(dt) which is called from the update loop.
+// All coordinates are in background-plate space (same as targets).
+
+const JUICE_COLORS_LEAVES = ["#b8945a","#c4a96e","#8d6b3a","#d4b87a","#7a5528"];
+
+function spawnBird(){
+  // Birds fly LEFT-to-RIGHT or right-to-left across the upper portion
+  const dir = Math.random()<0.5 ? 1 : -1;
+  const startX = dir>0 ? -40 : BG_W+40;
+  const y = 60 + Math.random()*160;  // upper wall / sky area
+  G.birds.push({
+    x: startX,
+    y: y,
+    vy: (Math.random()-0.5)*18,       // gentle up-down drift
+    vx: dir * (55 + Math.random()*40),// horizontal speed in bg-px/s
+    wingPhase: Math.random()*Math.PI*2,
+    size: 5 + Math.random()*4,
+    life: 1, age: 0,
+    maxLife: (BG_W + 80) / 70         // time to cross the screen
+  });
+}
+
+function spawnLeaf(){
+  const x = 100 + Math.random()*(BG_W-200);
+  const y = 80 + Math.random()*200;   // start in upper area, drift down
+  G.leaves.push({
+    x, y,
+    vx: (Math.random()-0.5)*25,
+    vy: 18 + Math.random()*22,
+    rot: Math.random()*Math.PI*2,
+    rotV: (Math.random()-0.5)*4,
+    color: JUICE_COLORS_LEAVES[Math.floor(Math.random()*JUICE_COLORS_LEAVES.length)],
+    size: 4 + Math.random()*5,
+    age: 0,
+    life: 4 + Math.random()*3
+  });
+}
+
+function updateJuice(dt){
+  if(TOURNAMENT.phase !== "round1") return;  // juice only in round1
+
+  // Spawn birds occasionally
+  if(Math.random() < dt * 0.25) spawnBird();   // ~0.25 birds/second average
+  if(Math.random() < dt * 0.4)  spawnLeaf();   // ~0.4 leaves/second average
+
+  // Update birds
+  for(let i=G.birds.length-1; i>=0; i--){
+    const b = G.birds[i];
+    b.x += b.vx * dt;
+    b.y += b.vy * dt;
+    b.vy += (Math.sin(b.age*2.5)*12 - b.vy) * dt * 3; // lazy sine drift
+    b.wingPhase += dt * 8;
+    b.age += dt;
+    if(b.age > b.maxLife) G.birds.splice(i,1);
+  }
+
+  // Update leaves
+  for(let i=G.leaves.length-1; i>=0; i--){
+    const l = G.leaves[i];
+    l.x += l.vx * dt;
+    l.y += l.vy * dt;
+    l.rot += l.rotV * dt;
+    l.vx += (Math.random()-0.5)*8*dt; // gentle turbulence
+    l.age += dt;
+    if(l.age > l.life) G.leaves.splice(i,1);
+  }
+}
+
+// ============================================================
+// ROUND 2 — Vertical Column Flip-Out Targets
+// ============================================================
+// Each column has 10 positions evenly spaced on the Y axis inside
+// the safe zone of the background plate. Targets idle at their
+// column x, then "flip out" at 45° or 60° to become hittable,
+// then return. Only the active (flipped-out) target is hittable.
+//
+// Column axes (in background-plate coordinates):
+//   P1 column: x = BG_W * 0.30
+//   P2 column: x = BG_W * 0.70
+//
+// Phase states per column-target:
+//   "idle"    → waiting for its turn
+//   "rising"  → flip-out animation (0.25s)
+//   "active"  → fully extended, hittable (0.45s)
+//   "falling" → returning animation (0.20s)
+//   "done"    → removed from list
+//
+// Graffiti splash fires on hit, then next target in the column rises.
+
+const R2_COL_P1 = BG_W * 0.30;
+const R2_COL_P2 = BG_W * 0.70;
+const R2_ROWS = 10;
+const R2_MARGIN_TOP = BG_H * 0.15;
+const R2_MARGIN_BOT = BG_H * 0.85;
+const R2_ROW_STEP = (R2_MARGIN_BOT - R2_MARGIN_TOP) / (R2_ROWS - 1);
+
+// Alternating angles for variety — 45° and 60°
+const R2_ANGLES_LEFT  = [45, 60, 45, 60, 45, 60, 45, 60, 45, 60].map(a=>-a*Math.PI/180);
+const R2_ANGLES_RIGHT = [45, 60, 45, 60, 45, 60, 45, 60, 45, 60].map(a=> a*Math.PI/180);
+
+const R2_RISE_TIME   = 0.25;   // seconds to flip out
+const R2_ACTIVE_TIME = 0.45;   // seconds the target is hittable
+const R2_FALL_TIME   = 0.20;   // seconds to return
+const R2_MAX_OFFSET  = 80;     // how far (bg-px) the target swings out
+
+// G.r2 holds the round-2 state
+function initRound2(){
+  const makeColumn = (colX, angles) =>
+    Array.from({length: R2_ROWS}, (_, i) => ({
+      id: ++TID,
+      colX,
+      x: colX,
+      y: R2_MARGIN_TOP + i * R2_ROW_STEP,
+      angle: angles[i],
+      phase: i===0 ? "rising" : "idle",  // first one starts immediately
+      age: 0,
+      type: i%3===0 ? "bmx" : i%3===1 ? "bimba" : "scooter",
+      face: colX < BG_W/2 ? 1 : -1,
+      wob: Math.random()*Math.PI*2,
+      skin: Math.random()<0.5 ? "#e8b48a" : "#c98e62",
+      shirt: ["#e6a925","#4e54a3","#8a90e8","#caa64a","#6a70c0"][Math.floor(Math.random()*5)],
+      hit: false,
+      r: 40,         // hit radius
+    }));
+
+  G.r2 = {
+    p1: makeColumn(R2_COL_P1, R2_ANGLES_LEFT),
+    p2: makeColumn(R2_COL_P2, R2_ANGLES_RIGHT),
+    p1score: 0,
+    p2score: 0,
+    done: false,
+  };
+}
+
+function updateRound2Columns(dt){
+  if(!G.r2) return;
+  updateOneColumn(G.r2.p1, dt);
+  updateOneColumn(G.r2.p2, dt);
+  // Check if all targets in both columns are done
+  const allDone = G.r2.p1.every(t=>t.phase==="done") && G.r2.p2.every(t=>t.phase==="done");
+  if(allDone && !G.r2.done){ G.r2.done=true; /* round2 can end early */ }
+}
+
+function updateOneColumn(col, dt){
+  const active = col.find(t=>t.phase==="rising"||t.phase==="active"||t.phase==="falling");
+  if(!active) return;
+
+  active.age += dt;
+  const t = active;
+
+  if(t.phase==="rising"){
+    const prog = Math.min(1, t.age / R2_RISE_TIME);
+    const ease = prog < 0.5 ? 2*prog*prog : 1-Math.pow(-2*prog+2,2)/2; // ease-in-out
+    t.x = t.colX + Math.sin(t.angle) * R2_MAX_OFFSET * ease;
+    t.y = (R2_MARGIN_TOP + col.indexOf(t) * R2_ROW_STEP) - Math.abs(Math.cos(t.angle)) * R2_MAX_OFFSET * ease;
+    if(t.age >= R2_RISE_TIME){ t.phase="active"; t.age=0; }
+  }
+  else if(t.phase==="active"){
+    // Hold position — target is hittable
+    if(t.age >= R2_ACTIVE_TIME){ t.phase="falling"; t.age=0; }
+  }
+  else if(t.phase==="falling"){
+    const prog = Math.min(1, t.age / R2_FALL_TIME);
+    const ease = 1 - Math.pow(1-prog, 2);
+    const rowY = R2_MARGIN_TOP + col.indexOf(t) * R2_ROW_STEP;
+    t.x = t.colX + Math.sin(t.angle) * R2_MAX_OFFSET * (1-ease);
+    t.y = rowY - Math.abs(Math.cos(t.angle)) * R2_MAX_OFFSET * (1-ease);
+    if(t.age >= R2_FALL_TIME){
+      t.phase="done"; t.x=t.colX;
+      // Start next idle target in this column
+      const next = col.find(c=>c.phase==="idle");
+      if(next){ next.phase="rising"; next.age=0; }
+    }
+  }
+}
+
+// Called from resolveHit equivalent for round2 — hits the active target
+function pickR2TargetAtCrosshair(){
+  if(!G.r2) return null;
+  const cx = VIEW_W/2, cy = VIEW_H/2;
+  for(const col of [G.r2.p1, G.r2.p2]){
+    const active = col.find(t=>t.phase==="active");
+    if(!active) continue;
+    const sx = active.x - G.pan.x - (BG_W/2 - VIEW_W/2);
+    const sy = active.y - G.pan.y - (BG_H/2 - VIEW_H/2);
+    if(Math.hypot(sx-cx, sy-cy) <= active.r){
+      return active;
+    }
+  }
+  return null;
+}
+
+function resolveR2Hit(t){
+  t.hit = true;
+  t.phase = "falling";
+  t.age = 0;
+  // Score and graffiti
+  const T = TYPES[t.type];
+  G.score += T.pts;
+  popup(t.x, t.y-40, "+"+T.pts, T.color, false);
+  graffitiSplash(t.x, t.y, T.color);
+  dust(t.x, t.y, 6, 70);
+  G.shake = Math.min(G.shake+2, 6);
+  clearSound(1, false);
+  if(NET.room) netPub(roomTopic(),{t:"r2hit", id:t.id, pts:T.pts, name:NET.name});
+  // Advance next target immediately instead of waiting for fall
+  const col = G.r2.p1.includes(t) ? G.r2.p1 : G.r2.p2;
+  const next = col.find(c=>c.phase==="idle");
+  if(next){ next.phase="rising"; next.age=0; }
+}
+
+// ============================================================
+// GRAFFITI SPLASH FX
+// ============================================================
+function graffitiSplash(wx, wy, baseColor){
+  const SPRAY_COLORS = [baseColor, "#ffffff", "#ffeb3b", baseColor, "#ff6b6b"];
+  const count = 18 + Math.floor(Math.random()*10);
+  for(let i=0; i<count; i++){
+    const angle = Math.random()*Math.PI*2;
+    const speed = 20 + Math.random()*90;
+    G.particles.push({
+      x: wx + (Math.random()-0.5)*10,
+      y: wy + (Math.random()-0.5)*10,
+      vx: Math.cos(angle)*speed,
+      vy: Math.sin(angle)*speed - 30,  // slight upward bias
+      size: 3 + Math.random()*6,
+      life: 0.6 + Math.random()*0.5,
+      age: 0,
+      color: SPRAY_COLORS[Math.floor(Math.random()*SPRAY_COLORS.length)],
+      spray: true,   // flag so drawFx renders differently
+      rot: Math.random()*Math.PI*2,
+    });
+  }
+  // A few larger "drip" blobs that slowly fall
+  for(let i=0; i<5; i++){
+    G.particles.push({
+      x: wx + (Math.random()-0.5)*30,
+      y: wy + (Math.random()-0.5)*20,
+      vx: (Math.random()-0.5)*15,
+      vy: 5 + Math.random()*20,
+      size: 5 + Math.random()*8,
+      life: 1.2 + Math.random()*0.8,
+      age: 0,
+      color: baseColor,
+      spray: true,
+      drip: true,
+    });
+  }
+}
 // ============================================================
 // GAME FLOW — reset / start / end
 // ============================================================
@@ -769,6 +1026,10 @@ function resolveHit(t, weapon, fromShrapnel, scoreMult){
   const labelMult = comboMult*weaponMult;
   popup(t.x,t.y-40,"+"+pts+(labelMult>1?" ×"+labelMult:""), weapon==="wax" ? "#e6a925" : T.color, big || weapon==="wax");
   dust(t.x,t.y,big?12:8,big?130:90);
+  // Round 2: graffiti spray-paint splash instead of plain dust
+  if(TOURNAMENT.phase==="round2"){
+    graffitiSplash(t.x, t.y, TYPES[t.type].color);
+  }
   if(!fromShrapnel){
     G.shake=Math.min(G.shake+(big?5:2.4),8);
     G.hitstop=big?0.045:0.02;
@@ -786,6 +1047,7 @@ function reset(){
   G.pan.x=0; G.pan.y=0; G.pan.vx=0; G.pan.vy=0;
   panTargetX=0; panTargetY=0;
   G.spawnTimer=0; G.shake=0; G.hitstop=0; G.elapsed=0;
+  G.birds=[]; G.leaves=[];
   G.flaredAt=new Set();
   G.weapon="skate";
   G.ammo={ wax:WAX_START, shrapnel:SHRAPNEL_START };
@@ -811,6 +1073,8 @@ function start(){
   }
 
   reset(); G.mode="play";
+  // Round 2 initialises its own column system instead of normal targets
+  if(TOURNAMENT.phase==="round2") initRound2();
   startOverlay.classList.add("hidden"); endOverlay.classList.add("hidden");
   // Hide the mobile instruction box once play begins
   document.getElementById("instructionBox")?.classList.add("hidden");
@@ -890,6 +1154,27 @@ function update(dt){
   const pk = 1-Math.exp(-PAN_SMOOTH*dt);
   G.pan.x += (panTargetX-G.pan.x)*pk;
   G.pan.y += (panTargetY-G.pan.y)*pk;
+
+  // Ambient juice (birds + leaves) — round 1 only
+  updateJuice(dt);
+
+  // Round 2 column logic — replaces normal target spawning
+  if(TOURNAMENT.phase==="round2"){
+    updateRound2Columns(dt);
+    // Particles still need updating
+    for(let i=G.particles.length-1;i>=0;i--){
+      const p=G.particles[i]; p.age+=dt;
+      p.x+=p.vx*dt; p.y+=p.vy*dt;
+      if(p.spray && p.drip) p.vy+=60*dt; // drips fall with gravity
+      if(p.age>=p.life) G.particles.splice(i,1);
+    }
+    for(let i=G.popups.length-1;i>=0;i--){
+      const p=G.popups[i]; p.age+=dt;
+      p.y-=28*dt;
+      if(p.age>=p.life) G.popups.splice(i,1);
+    }
+    return; // skip normal target spawning/lifecycle
+  }
 
   // spawning
   G.spawnTimer-=dt;
@@ -1230,10 +1515,34 @@ function drawFx(){
     const sy = p.y - G.pan.y - (BG_H/2 - VIEW_H/2);
     const t = p.age/p.life;
     ctx.globalAlpha = Math.max(0,1-t);
-    ctx.fillStyle = "#cfc8b8";
-    ctx.beginPath(); ctx.arc(sx, sy, p.size*(1-t*0.5), 0, Math.PI*2); ctx.fill();
+
+    if(p.spray){
+      // Graffiti splash: coloured blobs, some with slight star shape
+      ctx.fillStyle = p.color || "#cfc8b8";
+      ctx.save();
+      ctx.translate(sx, sy);
+      if(p.rot) ctx.rotate(p.rot + t*2);
+      const r = p.size*(1-t*0.4);
+      if(p.drip){
+        // elongated drip shape
+        ctx.beginPath(); ctx.ellipse(0,0,r*0.5,r,0,0,Math.PI*2); ctx.fill();
+      } else {
+        ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.fill();
+      }
+      ctx.restore();
+    } else {
+      ctx.fillStyle = "#cfc8b8";
+      ctx.beginPath(); ctx.arc(sx, sy, p.size*(1-t*0.5), 0, Math.PI*2); ctx.fill();
+    }
   }
   ctx.globalAlpha = 1;
+
+  // Juice: birds and falling leaves (round1 only)
+  drawJuice();
+
+  // Round 2 columns
+  if(TOURNAMENT.phase==="round2") drawR2Columns();
+
   drawProjectiles();
   for(const p of G.popups){
     const sx = p.x - G.pan.x - (BG_W/2 - VIEW_W/2);
@@ -1251,6 +1560,102 @@ function drawFx(){
   }
   ctx.globalAlpha = 1;
 }
+
+// Draws ambient birds and leaves over the background plate
+function drawJuice(){
+  if(TOURNAMENT.phase !== "round1") return;
+  const offX = G.pan.x + (BG_W/2 - VIEW_W/2);
+  const offY = G.pan.y + (BG_H/2 - VIEW_H/2);
+
+  // Leaves — simple rounded rectangle rotated
+  for(const l of G.leaves){
+    const t = l.age/l.life;
+    const sx = l.x - offX;
+    const sy = l.y - offY;
+    if(sx<-20||sx>VIEW_W+20||sy<-20||sy>VIEW_H+20) continue;
+    ctx.save();
+    ctx.globalAlpha = Math.max(0, t<0.8 ? 0.7 : 0.7*(1-(t-0.8)/0.2));
+    ctx.translate(sx, sy);
+    ctx.rotate(l.rot);
+    ctx.fillStyle = l.color;
+    ctx.beginPath();
+    ctx.ellipse(0, 0, l.size*0.5, l.size, 0, 0, Math.PI*2);
+    ctx.fill();
+    ctx.restore();
+  }
+
+  // Birds — two wing-flap arcs
+  for(const b of G.birds){
+    const sx = b.x - offX;
+    const sy = b.y - offY;
+    if(sx<-30||sx>VIEW_W+30||sy<-20||sy>VIEW_H+20) continue;
+    const wingFold = Math.sin(b.wingPhase) * 0.6; // -0.6 to 0.6 radians
+    ctx.save();
+    ctx.globalAlpha = 0.55;
+    ctx.strokeStyle = "#0a0712";
+    ctx.lineWidth = b.size*0.35;
+    ctx.lineCap = "round";
+    ctx.translate(sx, sy);
+    // Left wing
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.quadraticCurveTo(-b.size*0.6, -b.size*0.5 + wingFold*b.size,
+                         -b.size*1.3,  wingFold*b.size*0.3);
+    ctx.stroke();
+    // Right wing
+    ctx.beginPath();
+    ctx.moveTo(0,0);
+    ctx.quadraticCurveTo(b.size*0.6, -b.size*0.5 + wingFold*b.size,
+                         b.size*1.3,  wingFold*b.size*0.3);
+    ctx.stroke();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// Draws round 2 column targets — both columns, all phases
+function drawR2Columns(){
+  if(!G.r2) return;
+  const time = performance.now()/1000;
+  for(const col of [G.r2.p1, G.r2.p2]){
+    for(const t of col){
+      if(t.phase==="idle"||t.phase==="done") continue;
+      // compute screen position
+      const sx = t.x - G.pan.x - (BG_W/2 - VIEW_W/2);
+      const sy = t.y - G.pan.y - (BG_H/2 - VIEW_H/2);
+      if(sx<-80||sx>VIEW_W+80||sy<-80||sy>VIEW_H+80) continue;
+
+      const prog = t.phase==="rising"   ? Math.min(1,t.age/R2_RISE_TIME)
+                 : t.phase==="falling"  ? 1-Math.min(1,t.age/R2_FALL_TIME)
+                 : 1; // active
+      const popScale = prog;
+
+      // Active glow ring
+      if(t.phase==="active"){
+        const pulse = 0.55 + 0.45*Math.sin(time*8);
+        ctx.save();
+        ctx.globalAlpha = 0.55*pulse;
+        ctx.strokeStyle = TYPES[t.type].color;
+        ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(sx, sy, t.r+8, 0, Math.PI*2); ctx.stroke();
+        ctx.restore();
+      }
+
+      drawGroundCrack(sx, sy, popScale);
+      ctx.save();
+      ctx.globalAlpha = t.phase==="active" ? 1 : 0.85;
+      ctx.translate(sx, sy);
+      ctx.scale(1, Math.max(0.04, popScale));
+      ctx.translate(-sx, -sy);
+      const proxy = {x:sx, y:sy, face:t.face, wob:t.wob, skin:t.skin, shirt:t.shirt};
+      if(t.type==="scooter") drawScooterKid(proxy, time);
+      else if(t.type==="bimba") drawBimbaKid(proxy, time);
+      else drawBMX(proxy, time);
+      ctx.restore();
+    }
+  }
+}
+
 
 // Tiny skateboard silhouette — deck + two trucks/wheel pairs — drawn with
 // plain Canvas2D primitives (not touched/borrowed from the verbatim sprite
