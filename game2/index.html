@@ -127,6 +127,18 @@
   <div class="overlay" id="startOverlay">
     <div class="kicker">SCOOTER HUNTER</div>
     <div class="title">LOCALS<br>ONLY 2<small>סקייטפארק רחובות · TARGET RANGE</small></div>
+
+    <!-- Tournament banner: shown automatically when an opponent is in the room.
+         Hidden in solo mode. JS toggles .hidden via updateTournamentBanner(). -->
+    <div id="tnBanner" class="hidden">
+      <div class="tn-banner-label">🏆 טורניר LOCALS ONLY — הטוב משלוש!</div>
+      <div class="tn-banner-sub">
+        <span class="ib-amber">שלב 1:</span> ציד מטרות &nbsp;·&nbsp;
+        <span class="ib-amber">שלב 2:</span> דו-קרב טורים &nbsp;·&nbsp;
+        <span class="ib-amber">שלב 3:</span> אקסטרים 🔥
+      </div>
+    </div>
+
     <div class="legend">
       <div class="chip">🛴 Scooter Kid · 10</div>
       <div class="chip">🚗 Bimba Kid · 35</div>

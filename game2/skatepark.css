@@ -364,6 +364,44 @@ canvas{
 /* purple removed — was unreadable on dark bg; use white instead */
 .ib-purple{ color:#ffffff; font-weight:700; }
 
+/* ---- Tournament overlays ------------------------------------------ */
+/* Inline banner inside startOverlay — appears when opponent is in plaza */
+#tnBanner{
+  background:linear-gradient(135deg,rgba(78,84,163,.25),rgba(230,169,37,.15));
+  border:1px solid rgba(230,169,37,.5);
+  border-radius:10px;
+  padding:8px 14px;
+  text-align:center;
+  margin:2px 0 4px;
+  width:min(320px,92%);
+}
+#tnBanner.hidden{ display:none !important; }
+.tn-banner-label{
+  font-family:'Arial Black','Helvetica Neue',Arial,sans-serif;
+  font-size:clamp(11px,2.2vw,14px);
+  font-weight:900;
+  color:var(--brand-amber);
+  letter-spacing:.04em;
+  text-shadow:0 0 12px rgba(230,169,37,.4);
+  margin-bottom:3px;
+}
+.tn-banner-sub{
+  font-size:clamp(9px,1.8vw,11px);
+  color:rgba(243,239,255,.75);
+  line-height:1.4;
+}
+
+#tnPreOverlay .title{
+  text-shadow:0 0 28px rgba(230,169,37,.35), 3px 3px 0 var(--brand-purple);
+}
+#betweenRoundOverlay #tn-wait-msg{
+  color:var(--brand-amber);
+  font-weight:700;
+  font-size:14px;
+  letter-spacing:.05em;
+}
+#betweenRoundOverlay #tn-wait-msg.hidden{ display:none !important; }
+
 #thumbHud{
   position:absolute;
   right:12px;bottom:12px;
