@@ -216,6 +216,25 @@
     <button class="btn" id="tn-continue-btn">המשך לשלב 2 🎯</button>
     <div class="hint hidden" id="tn-wait-msg" style="font-size:14px;margin-top:10px"></div>
   </div>
+  <!-- TOURNAMENT: Championship screen — shown after round3 ends -->
+  <div class="overlay hidden" id="champOverlay">
+    <div class="kicker" style="color:var(--brand-purple);letter-spacing:.4em">LOCALS ONLY TOURNAMENT</div>
+    <div class="title" id="champ-title" style="font-size:clamp(18px,4.5vw,30px);line-height:1.1">🏆 אלוף הסקייטפארק!</div>
+    <div class="statRow" style="margin:12px 0 6px;gap:28px">
+      <div class="stat">
+        <div class="hudLabel">ניקוד שלך</div>
+        <div class="hudValue" id="champ-my-total" style="color:var(--brand-amber);font-size:30px">0</div>
+      </div>
+      <div class="stat">
+        <div class="hudLabel">ניקוד יריב</div>
+        <div class="hudValue" id="champ-opp-total" style="color:var(--brand-purple);font-size:30px">---</div>
+      </div>
+    </div>
+    <div class="legend" style="margin:4px 0 8px">
+      <div class="chip" style="direction:rtl">שלב 1 + שלב 2 + שלב 3 מצטברים</div>
+    </div>
+    <button class="btn" id="champBackBtn" style="margin-top:8px">חזרה ללובי 🛹</button>
+  </div>
 
 </div>
 

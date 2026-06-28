@@ -580,6 +580,17 @@ function fireWeapon(){
 
 // ---- Weapon 1: Skateboard — unlimited ammo, direct hit drops a target ----
 function fireSkateboard(){
+  // Round 3: check boss hit first (only if this client has a vuln window)
+  if(TOURNAMENT.phase==="round3" && myVulnTimer > 0 && G.boss && !G.boss.dead){
+    const bsx = G.boss.x - G.pan.x - (BG_W/2 - VIEW_W/2);
+    const bsy = G.boss.y - G.pan.y - (BG_H/2 - VIEW_H/2);
+    if(Math.hypot(bsx - VIEW_W/2, bsy - VIEW_H/2) <= G.boss.r + 10){
+      flashMuzzle();
+      onR3BossHit();
+      if(NET.room) netPub(roomTopic(),{t:"fire", w:"skate"});
+      return;
+    }
+  }
   const hit = pickTargetAtCrosshair();
   flashMuzzle();
   spawnBoardProjectile(hit);
@@ -879,6 +890,157 @@ function graffitiSplash(wx, wy, baseColor){
     });
   }
 }
+
+// ============================================================
+// ROUND 3 — HALL OF FAME : BOSS + CAMERA FLASHES
+// ============================================================
+// G.boss  — the shared boss object (HP synced via MQTT)
+// G.flashes — camera flash particles (purely visual)
+// myMinionCount   — per-client minion kill counter (local only)
+// myVulnTimer     — seconds remaining in this client's vuln window
+
+const BOSS_ROUND_TIME    = 60;    // seconds
+const BOSS_HP_MAX        = 3;
+const BOSS_VULN_HITS     = 3;     // minions to kill before boss opens
+const BOSS_VULN_DURATION = 5;     // seconds the boss stays open
+const BOSS_KILL_BONUS    = 3000;  // score bonus for landing the kill shot
+const BOSS_ORBIT_SPEED   = 0.42;  // radians/second around the plate centre
+const BOSS_ORBIT_RX      = BG_W * 0.28;
+const BOSS_ORBIT_RY      = BG_H * 0.22;
+
+// Per-client state (never sent over MQTT)
+let myMinionCount = 0;
+let myVulnTimer   = 0;   // >0 = boss is vulnerable for this client
+
+function initRound3(){
+  G.boss = {
+    hp:       BOSS_HP_MAX,
+    angle:    0,                 // orbit angle in radians
+    x:        BG_W/2,
+    y:        BG_H/2,
+    r:        70,                // hit radius (large — it's a BOSS)
+    dead:     false,
+    wob:      0,
+    face:     1,
+  };
+  G.flashes = [];
+  myMinionCount = 0;
+  myVulnTimer   = 0;
+}
+
+function spawnCameraFlash(){
+  // White flash point that blooms and fades — purely canvas-space (screen coords)
+  G.flashes.push({
+    sx: 30 + Math.random() * (VIEW_W - 60),
+    sy: 20 + Math.random() * (VIEW_H - 40),
+    life: 0.45 + Math.random() * 0.35,
+    age:  0,
+    r:    8 + Math.random() * 18,
+  });
+}
+
+function updateRound3(dt){
+  if(!G.boss) return;
+
+  // Orbit the boss around the plate centre
+  G.boss.angle += BOSS_ORBIT_SPEED * dt;
+  G.boss.x = BG_W/2 + Math.cos(G.boss.angle) * BOSS_ORBIT_RX;
+  G.boss.y = BG_H/2 + Math.sin(G.boss.angle) * BOSS_ORBIT_RY * 0.6;
+  G.boss.wob += dt * 2.2;
+  G.boss.face = Math.cos(G.boss.angle) >= 0 ? 1 : -1;
+
+  // Vulnerability countdown for this client
+  if(myVulnTimer > 0){
+    myVulnTimer -= dt;
+    if(myVulnTimer <= 0){
+      myVulnTimer = 0;
+      myMinionCount = 0;  // window expired — reset counter
+    }
+  }
+
+  // Camera flashes — spawn randomly (~1.5 per second in round3)
+  if(Math.random() < dt * 1.5) spawnCameraFlash();
+
+  // Update flash particles
+  for(let i = G.flashes.length - 1; i >= 0; i--){
+    G.flashes[i].age += dt;
+    if(G.flashes[i].age >= G.flashes[i].life) G.flashes.splice(i, 1);
+  }
+}
+
+// Called from resolveHit when phase === "round3" and the target is a minion
+function onR3MinionKill(t){
+  if(myVulnTimer > 0) return; // already in a vuln window — ignore extra kills
+  myMinionCount++;
+  if(myMinionCount >= BOSS_VULN_HITS){
+    myVulnTimer = BOSS_VULN_DURATION;
+    myMinionCount = 0;
+    showFlare("בוס פגיע!", "5 שניות — פגע עכשיו!", "#39FF14");
+    announce("⚡ הבוס פתוח! פגע עכשיו!");
+  }
+}
+
+// Called when this client hits the boss during their vuln window
+function onR3BossHit(){
+  if(!G.boss || G.boss.dead) return;
+  if(myVulnTimer <= 0) return;      // this client's window is closed
+
+  myVulnTimer   = 0;
+  myMinionCount = 0;
+
+  G.boss.hp--;
+  const newHp = G.boss.hp;
+
+  // Sync HP to opponent
+  if(NET.room) netPub(roomTopic(), {t:"boss_hit", hp: newHp, name: NET.name});
+
+  graffitiSplash(G.boss.x, G.boss.y, "#39FF14");
+  G.shake = 8;
+
+  if(newHp <= 0){
+    G.boss.dead = true;
+    G.score += BOSS_KILL_BONUS;
+    popup(G.boss.x, G.boss.y - 80, "BOSS DOWN! +" + BOSS_KILL_BONUS, "#39FF14", true);
+    setTimeout(endTournamentFinal, 800);
+  } else {
+    popup(G.boss.x, G.boss.y - 60, "💥 בוס HP: " + newHp, "#39FF14", true);
+    showFlare("פגיעה בבוס!", "HP נשאר: " + newHp, "#39FF14");
+  }
+}
+
+function endTournamentFinal(){
+  // Save round3 score, then show the championship screen
+  TOURNAMENT.scores.p1.push(G.score);
+  if(NET.oppoFinal != null) TOURNAMENT.scores.p2.push(NET.oppoFinal);
+  G.mode = "over";
+  setDrone(false);
+  if(NET.room) netPub(roomTopic(), {t:"end", score:G.score, name:NET.name});
+
+  const total1 = TOURNAMENT.scores.p1.reduce((a,b)=>a+b,0);
+  const total2 = TOURNAMENT.scores.p2.reduce((a,b)=>a+b,0);
+
+  const myTotalEl  = document.getElementById("champ-my-total");
+  const oppTotalEl = document.getElementById("champ-opp-total");
+  const titleEl    = document.getElementById("champ-title");
+  if(myTotalEl)  myTotalEl.textContent  = total1.toLocaleString();
+  if(oppTotalEl) oppTotalEl.textContent = total2 > 0 ? total2.toLocaleString() : "---";
+  if(titleEl){
+    if(!NET.room || total2 === 0){
+      titleEl.textContent = "🏆 אלוף הסקייטפארק!";
+    } else if(total1 > total2){
+      titleEl.textContent = "🏆 " + NET.name + " אלוף הסקייטפארק!";
+    } else if(total2 > total1){
+      titleEl.textContent = "🏆 " + (NET.oppo?.name || "היריב") + " אלוף הסקייטפארק!";
+    } else {
+      titleEl.textContent = "🤝 תיקו — שניכם אלופים!";
+    }
+  }
+
+  TOURNAMENT.phase = "final";
+  const champOv = document.getElementById("champOverlay");
+  if(champOv) champOv.classList.remove("hidden");
+  hud.style.display = "none";
+}
 // ============================================================
 // GAME FLOW — reset / start / end
 // ============================================================
@@ -900,6 +1062,8 @@ function resolveHit(t, weapon, fromShrapnel, scoreMult){
   dust(t.x,t.y,big?12:8,big?130:90);
   // Blitz round: extra graffiti splash on every hit
   if(TOURNAMENT.phase==="round2") graffitiSplash(t.x, t.y, TYPES[t.type].color);
+  // Boss round: count minion kills toward vulnerability window
+  if(TOURNAMENT.phase==="round3") onR3MinionKill(t);
   if(!fromShrapnel){
     G.shake=Math.min(G.shake+(big?5:2.4),8);
     G.hitstop=big?0.045:0.02;
@@ -918,6 +1082,7 @@ function reset(){
   panTargetX=0; panTargetY=0;
   G.spawnTimer=0; G.shake=0; G.hitstop=0; G.elapsed=0;
   G.birds=[]; G.leaves=[];
+  G.flashes=[]; G.boss=null;
   G.flaredAt=new Set();
   G.weapon="skate";
   G.ammo={ wax:WAX_START, shrapnel:SHRAPNEL_START };
@@ -932,7 +1097,7 @@ function start(){
   // During a tournament inter-round advance the room must stay alive.
   // Only leave the room if this is a genuine solo restart (no room) or
   // the player manually restarted outside of a tournament context.
-  const isTournamentAdvance = (TOURNAMENT.phase === "round2" || TOURNAMENT.phase === "round3");
+  const isTournamentAdvance = (TOURNAMENT.phase === "round2" || TOURNAMENT.phase === "round3" || TOURNAMENT.phase === "final");
   if(NET.room && !NET.starting && !isTournamentAdvance) leaveRoom();
 
   // Set tournament phase — but never overwrite an already-set round2/3 phase.
@@ -986,6 +1151,12 @@ function end(){
     return;
   }
 
+  // Round 3: time ran out without boss kill — still show championship screen
+  if(TOURNAMENT.phase==="round3"){
+    endTournamentFinal();
+    return;
+  }
+
   endOverlay.classList.remove("hidden");
   refreshRematchUI();
 }
@@ -1030,6 +1201,9 @@ function update(dt){
 
   // Ambient juice (birds + leaves) — round 1 only
   updateJuice(dt);
+
+  // Round 3 boss + camera flashes
+  if(TOURNAMENT.phase==="round3") updateRound3(dt);
 
   // spawning — blitz mode uses same system but more targets, faster rate
   const maxT  = TOURNAMENT.phase==="round2" ? BLITZ_MAX_TARGETS : 10;
@@ -1174,15 +1348,23 @@ function advanceTournament(){
   const ov = document.getElementById("betweenRoundOverlay");
   if(ov) ov.classList.add("hidden");
 
-  TOURNAMENT.phase     = "round2";
+  // Advance to the next phase
+  const nextPhase = TOURNAMENT.phase==="round1" ? "round2" : "round3";
+  TOURNAMENT.phase     = nextPhase;
   TOURNAMENT.myReady   = false;
   TOURNAMENT.oppoReady = false;
 
   NET.starting = true;
   reset();
-  // Blitz round: override the session timer to 20 seconds
-  G.time   = BLITZ_TIME;
-  G.mode   = "play";
+
+  if(nextPhase==="round2"){
+    G.time = BLITZ_TIME;   // 20-second blitz
+  } else {
+    G.time = BOSS_ROUND_TIME;  // 60-second boss round
+    initRound3();
+  }
+
+  G.mode = "play";
   startOverlay.classList.add("hidden");
   endOverlay.classList.add("hidden");
   hud.style.display = "flex";
@@ -1190,7 +1372,12 @@ function advanceTournament(){
   setDrone(true);
   beat();
   NET.starting = false;
-  setTimeout(()=>{ announce("⚡ בליץ! 20 שניות של כאוס!"); }, 300);
+
+  if(nextPhase==="round2"){
+    setTimeout(()=>{ announce("⚡ בליץ! 20 שניות של כאוס!"); }, 300);
+  } else {
+    setTimeout(()=>{ announce("🔥 היכל התהילה — הבוס מחכה!"); }, 300);
+  }
 }
 
 // Start the tournament from round1
@@ -1217,6 +1404,15 @@ function updateTournamentBanner(hasOpponent){
   } else {
     banner.classList.add("hidden");
   }
+}
+
+// Championship back button
+{
+  const btn = document.getElementById("champBackBtn");
+  if(btn) btn.addEventListener("click", ()=>{
+    document.getElementById("champOverlay")?.classList.add("hidden");
+    backToMenu();
+  });
 }
 // ============================================================
 // SPRITES — target figures
@@ -1441,6 +1637,12 @@ function drawFx(){
   // Juice: birds and falling leaves (round1 only)
   drawJuice();
 
+  // Round 3: camera flashes + boss
+  if(TOURNAMENT.phase==="round3"){
+    drawCameraFlashes();
+    drawBoss();
+  }
+
   drawProjectiles();
   for(const p of G.popups){
     const sx = p.x - G.pan.x - (BG_W/2 - VIEW_W/2);
@@ -1576,6 +1778,110 @@ function drawOpponentScope(time){
 
 function drawScreenShake(){
   // applied via ctx transform in the main frame() loop, nothing to draw here
+}
+
+// ============================================================
+// ROUND 3 DRAW FUNCTIONS
+// ============================================================
+
+function drawCameraFlashes(){
+  if(!G.flashes) return;
+  for(const f of G.flashes){
+    const t = f.age / f.life;
+    // Bloom: expand fast, fade slow
+    const progress = t < 0.15 ? t/0.15 : 1 - (t-0.15)/0.85;
+    const alpha = progress * 0.82;
+    const r = f.r * (0.4 + 0.6 * (t < 0.15 ? t/0.15 : 1));
+    ctx.save();
+    ctx.globalAlpha = alpha;
+    const g = ctx.createRadialGradient(f.sx, f.sy, 0, f.sx, f.sy, r);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(0.4, "rgba(255,255,240,0.6)");
+    g.addColorStop(1, "rgba(255,255,200,0)");
+    ctx.fillStyle = g;
+    ctx.beginPath(); ctx.arc(f.sx, f.sy, r, 0, Math.PI*2); ctx.fill();
+    ctx.restore();
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawBoss(){
+  if(!G.boss || G.boss.dead) return;
+  const b = G.boss;
+  const sx = b.x - G.pan.x - (BG_W/2 - VIEW_W/2);
+  const sy = b.y - G.pan.y - (BG_H/2 - VIEW_H/2);
+  if(sx < -120 || sx > VIEW_W+120 || sy < -120 || sy > VIEW_H+120) return;
+
+  const time = performance.now()/1000;
+  const isVulnerable = myVulnTimer > 0;
+
+  // Glow ring — green when vulnerable, red when shielded
+  const glowColor = isVulnerable ? "#39FF14" : "#ff2244";
+  const glowAlpha = isVulnerable
+    ? 0.5 + 0.5 * Math.sin(time * 12)          // fast pulse when open
+    : 0.15 + 0.1 * Math.sin(time * 2);          // slow pulse when shielded
+
+  ctx.save();
+  ctx.globalAlpha = glowAlpha;
+  ctx.strokeStyle = glowColor;
+  ctx.lineWidth = isVulnerable ? 5 : 2.5;
+  ctx.shadowColor = glowColor;
+  ctx.shadowBlur  = isVulnerable ? 22 : 8;
+  ctx.beginPath(); ctx.arc(sx, sy, b.r + 10, 0, Math.PI*2); ctx.stroke();
+  ctx.restore();
+
+  // HP pips above boss
+  const pipR = 7;
+  for(let i = 0; i < BOSS_HP_MAX; i++){
+    const px = sx - (BOSS_HP_MAX-1)*9 + i*18;
+    const py = sy - b.r - 24;
+    ctx.save();
+    ctx.fillStyle = i < b.hp ? "#39FF14" : "#333";
+    ctx.strokeStyle = "#000";
+    ctx.lineWidth = 1.5;
+    ctx.beginPath(); ctx.arc(px, py, pipR, 0, Math.PI*2);
+    ctx.fill(); ctx.stroke();
+    ctx.restore();
+  }
+
+  // Vulnerability countdown bar
+  if(isVulnerable){
+    const barW = b.r * 2;
+    const barH = 6;
+    const bx = sx - barW/2;
+    const by = sy - b.r - 40;
+    const fill = (myVulnTimer / BOSS_VULN_DURATION) * barW;
+    ctx.save();
+    ctx.fillStyle = "#111"; ctx.fillRect(bx, by, barW, barH);
+    ctx.fillStyle = "#39FF14"; ctx.fillRect(bx, by, fill, barH);
+    ctx.strokeStyle = "#39FF14"; ctx.lineWidth = 1;
+    ctx.strokeRect(bx, by, barW, barH);
+    ctx.restore();
+  }
+
+  // Draw the boss sprite — ScooterKid scaled up ×2.2
+  const proxy = {
+    x: sx, y: sy,
+    face: b.face,
+    wob:  b.wob,
+    skin: "#e8b48a",
+    shirt: "#e6a925",
+  };
+  ctx.save();
+  ctx.translate(sx, sy);
+  ctx.scale(2.2, 2.2);
+  ctx.translate(-sx, -sy);
+  drawScooterKid(proxy, time);
+  ctx.restore();
+
+  // "BOSS" label
+  ctx.save();
+  ctx.font = "900 11px 'Arial Black', Arial, sans-serif";
+  ctx.textAlign = "center";
+  ctx.fillStyle = isVulnerable ? "#39FF14" : "#ff2244";
+  ctx.textBaseline = "middle";
+  ctx.fillText("BOSS", sx, sy - b.r - 55);
+  ctx.restore();
 }
 // ============================================================
 // NETWORK — real-time plaza + 1v1 room sync via public MQTT (broker.emqx.io)
@@ -1890,6 +2196,20 @@ function onRoomMsg(m){
     // Opponent clicked "continue" on the between-round overlay
     TOURNAMENT.oppoReady = true;
     if(typeof tnUpdateReadyUI === "function") tnUpdateReadyUI();
+  }
+  else if(m.t==="boss_hit"){
+    // Opponent landed a boss hit — sync shared HP
+    if(G.boss && !G.boss.dead){
+      G.boss.hp = m.hp;
+      graffitiSplash(G.boss.x, G.boss.y, "#39FF14");
+      G.shake = 6;
+      if(m.hp <= 0){
+        G.boss.dead = true;
+        setTimeout(endTournamentFinal, 800);
+      } else {
+        popup(G.boss.x, G.boss.y - 60, "💥 בוס HP: " + m.hp, "#ff6b6b", true);
+      }
+    }
   }
   else if(m.t==="leave"){
     if(NET.oppo){ Players.delete("oppo_"+NET.room); NET.oppo=null; liveBoardEl.style.display="none"; }

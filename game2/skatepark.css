@@ -364,7 +364,19 @@ canvas{
 /* purple removed — was unreadable on dark bg; use white instead */
 .ib-purple{ color:#ffffff; font-weight:700; }
 
-/* ---- Tournament overlays ------------------------------------------ */
+/* ---- Championship overlay ----------------------------------------- */
+#champOverlay .title{
+  text-shadow:0 0 32px rgba(230,169,37,.5), 4px 4px 0 var(--brand-purple);
+}
+#champOverlay #champ-title{
+  animation: champPulse 1.4s ease-in-out infinite alternate;
+}
+@keyframes champPulse{
+  from{ text-shadow:0 0 16px rgba(230,169,37,.4), 3px 3px 0 var(--brand-purple); }
+  to  { text-shadow:0 0 40px rgba(230,169,37,.9), 3px 3px 0 var(--brand-purple); }
+}
+
+
 /* Inline banner inside startOverlay — appears when opponent is in plaza */
 #tnBanner{
   background:linear-gradient(135deg,rgba(78,84,163,.25),rgba(230,169,37,.15));
