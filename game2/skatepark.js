@@ -580,13 +580,11 @@ function fireWeapon(){
 
 // ---- Weapon 1: Skateboard — unlimited ammo, direct hit drops a target ----
 function fireSkateboard(){
-  const hit = TOURNAMENT.phase==="round2" ? pickR2TargetAtCrosshair() : pickTargetAtCrosshair();
+  const hit = pickTargetAtCrosshair();
   flashMuzzle();
   spawnBoardProjectile(hit);
-  if(hit){
-    if(TOURNAMENT.phase==="round2") resolveR2Hit(hit);
-    else resolveHit(hit, "skate");
-  } else snapSound(0);
+  if(hit) resolveHit(hit, "skate");
+  else snapSound(0);
   if(NET.room) netPub(roomTopic(),{t:"fire", w:"skate"});
 }
 
@@ -828,153 +826,27 @@ function updateJuice(dt){
 }
 
 // ============================================================
-// ROUND 2 — Vertical Column Flip-Out Targets
+// ROUND 2 — BLITZ MODE
+// Exactly the same spawn/update/draw pipeline as round 1, but
+// with a 20-second timer and aggressive spawn parameters.
+// No new systems — just config overrides applied via the helpers
+// below, called from update() and advanceTournament().
 // ============================================================
-// Each column has 10 positions evenly spaced on the Y axis inside
-// the safe zone of the background plate. Targets idle at their
-// column x, then "flip out" at 45° or 60° to become hittable,
-// then return. Only the active (flipped-out) target is hittable.
-//
-// Column axes (in background-plate coordinates):
-//   P1 column: x = BG_W * 0.30
-//   P2 column: x = BG_W * 0.70
-//
-// Phase states per column-target:
-//   "idle"    → waiting for its turn
-//   "rising"  → flip-out animation (0.25s)
-//   "active"  → fully extended, hittable (0.45s)
-//   "falling" → returning animation (0.20s)
-//   "done"    → removed from list
-//
-// Graffiti splash fires on hit, then next target in the column rises.
 
-const R2_COL_P1 = BG_W * 0.30;
-const R2_COL_P2 = BG_W * 0.70;
-const R2_ROWS = 10;
-const R2_MARGIN_TOP = BG_H * 0.15;
-const R2_MARGIN_BOT = BG_H * 0.85;
-const R2_ROW_STEP = (R2_MARGIN_BOT - R2_MARGIN_TOP) / (R2_ROWS - 1);
+const BLITZ_TIME         = 20;    // seconds
+const BLITZ_MAX_TARGETS  = 18;    // simultaneous targets on screen
+const BLITZ_SPAWN_MIN    = 0.12;  // minimum seconds between spawns
+const BLITZ_STAND_MIN    = 0.9;   // targets stand for less time
+const BLITZ_STAND_MAX    = 1.8;
 
-// Alternating angles for variety — 45° and 60°
-const R2_ANGLES_LEFT  = [45, 60, 45, 60, 45, 60, 45, 60, 45, 60].map(a=>-a*Math.PI/180);
-const R2_ANGLES_RIGHT = [45, 60, 45, 60, 45, 60, 45, 60, 45, 60].map(a=> a*Math.PI/180);
-
-const R2_RISE_TIME   = 0.25;   // seconds to flip out
-const R2_ACTIVE_TIME = 0.45;   // seconds the target is hittable
-const R2_FALL_TIME   = 0.20;   // seconds to return
-const R2_MAX_OFFSET  = 80;     // how far (bg-px) the target swings out
-
-// G.r2 holds the round-2 state
-function initRound2(){
-  const makeColumn = (colX, angles) =>
-    Array.from({length: R2_ROWS}, (_, i) => ({
-      id: ++TID,
-      colX,
-      x: colX,
-      y: R2_MARGIN_TOP + i * R2_ROW_STEP,
-      angle: angles[i],
-      phase: i===0 ? "rising" : "idle",  // first one starts immediately
-      age: 0,
-      type: i%3===0 ? "bmx" : i%3===1 ? "bimba" : "scooter",
-      face: colX < BG_W/2 ? 1 : -1,
-      wob: Math.random()*Math.PI*2,
-      skin: Math.random()<0.5 ? "#e8b48a" : "#c98e62",
-      shirt: ["#e6a925","#4e54a3","#8a90e8","#caa64a","#6a70c0"][Math.floor(Math.random()*5)],
-      hit: false,
-      r: 40,         // hit radius
-    }));
-
-  G.r2 = {
-    p1: makeColumn(R2_COL_P1, R2_ANGLES_LEFT),
-    p2: makeColumn(R2_COL_P2, R2_ANGLES_RIGHT),
-    p1score: 0,
-    p2score: 0,
-    done: false,
-  };
-}
-
-function updateRound2Columns(dt){
-  if(!G.r2) return;
-  updateOneColumn(G.r2.p1, dt);
-  updateOneColumn(G.r2.p2, dt);
-  // Check if all targets in both columns are done
-  const allDone = G.r2.p1.every(t=>t.phase==="done") && G.r2.p2.every(t=>t.phase==="done");
-  if(allDone && !G.r2.done){ G.r2.done=true; /* round2 can end early */ }
-}
-
-function updateOneColumn(col, dt){
-  const active = col.find(t=>t.phase==="rising"||t.phase==="active"||t.phase==="falling");
-  if(!active) return;
-
-  active.age += dt;
-  const t = active;
-
-  if(t.phase==="rising"){
-    const prog = Math.min(1, t.age / R2_RISE_TIME);
-    const ease = prog < 0.5 ? 2*prog*prog : 1-Math.pow(-2*prog+2,2)/2; // ease-in-out
-    t.x = t.colX + Math.sin(t.angle) * R2_MAX_OFFSET * ease;
-    t.y = (R2_MARGIN_TOP + col.indexOf(t) * R2_ROW_STEP) - Math.abs(Math.cos(t.angle)) * R2_MAX_OFFSET * ease;
-    if(t.age >= R2_RISE_TIME){ t.phase="active"; t.age=0; }
-  }
-  else if(t.phase==="active"){
-    // Hold position — target is hittable
-    if(t.age >= R2_ACTIVE_TIME){ t.phase="falling"; t.age=0; }
-  }
-  else if(t.phase==="falling"){
-    const prog = Math.min(1, t.age / R2_FALL_TIME);
-    const ease = 1 - Math.pow(1-prog, 2);
-    const rowY = R2_MARGIN_TOP + col.indexOf(t) * R2_ROW_STEP;
-    t.x = t.colX + Math.sin(t.angle) * R2_MAX_OFFSET * (1-ease);
-    t.y = rowY - Math.abs(Math.cos(t.angle)) * R2_MAX_OFFSET * (1-ease);
-    if(t.age >= R2_FALL_TIME){
-      t.phase="done"; t.x=t.colX;
-      // Start next idle target in this column
-      const next = col.find(c=>c.phase==="idle");
-      if(next){ next.phase="rising"; next.age=0; }
-    }
-  }
-}
-
-// Called from resolveHit equivalent for round2 — hits the active target
-function pickR2TargetAtCrosshair(){
-  if(!G.r2) return null;
-  const cx = VIEW_W/2, cy = VIEW_H/2;
-  for(const col of [G.r2.p1, G.r2.p2]){
-    const active = col.find(t=>t.phase==="active");
-    if(!active) continue;
-    const sx = active.x - G.pan.x - (BG_W/2 - VIEW_W/2);
-    const sy = active.y - G.pan.y - (BG_H/2 - VIEW_H/2);
-    if(Math.hypot(sx-cx, sy-cy) <= active.r){
-      return active;
-    }
-  }
-  return null;
-}
-
-function resolveR2Hit(t){
-  t.hit = true;
-  t.phase = "falling";
-  t.age = 0;
-  // Score and graffiti
-  const T = TYPES[t.type];
-  G.score += T.pts;
-  popup(t.x, t.y-40, "+"+T.pts, T.color, false);
-  graffitiSplash(t.x, t.y, T.color);
-  dust(t.x, t.y, 6, 70);
-  G.shake = Math.min(G.shake+2, 6);
-  clearSound(1, false);
-  if(NET.room) netPub(roomTopic(),{t:"r2hit", id:t.id, pts:T.pts, name:NET.name});
-  // Advance next target immediately instead of waiting for fall
-  const col = G.r2.p1.includes(t) ? G.r2.p1 : G.r2.p2;
-  const next = col.find(c=>c.phase==="idle");
-  if(next){ next.phase="rising"; next.age=0; }
-}
+// Returns a blitz-tuned stand time (overrides normal spawnInterval logic)
+function blitzSpawnInterval(){ return BLITZ_SPAWN_MIN + Math.random()*0.15; }
 
 // ============================================================
-// GRAFFITI SPLASH FX
+// GRAFFITI SPLASH FX (used by resolveHit in round2)
 // ============================================================
 function graffitiSplash(wx, wy, baseColor){
-  const SPRAY_COLORS = [baseColor, "#ffffff", "#ffeb3b", baseColor, "#ff6b6b"];
+  const SPRAY_COLORS = [baseColor, "#ffffff", "#39FF14", baseColor, "#ffeb3b"];
   const count = 18 + Math.floor(Math.random()*10);
   for(let i=0; i<count; i++){
     const angle = Math.random()*Math.PI*2;
@@ -983,16 +855,15 @@ function graffitiSplash(wx, wy, baseColor){
       x: wx + (Math.random()-0.5)*10,
       y: wy + (Math.random()-0.5)*10,
       vx: Math.cos(angle)*speed,
-      vy: Math.sin(angle)*speed - 30,  // slight upward bias
+      vy: Math.sin(angle)*speed - 30,
       size: 3 + Math.random()*6,
       life: 0.6 + Math.random()*0.5,
       age: 0,
       color: SPRAY_COLORS[Math.floor(Math.random()*SPRAY_COLORS.length)],
-      spray: true,   // flag so drawFx renders differently
+      spray: true,
       rot: Math.random()*Math.PI*2,
     });
   }
-  // A few larger "drip" blobs that slowly fall
   for(let i=0; i<5; i++){
     G.particles.push({
       x: wx + (Math.random()-0.5)*30,
@@ -1027,10 +898,8 @@ function resolveHit(t, weapon, fromShrapnel, scoreMult){
   const labelMult = comboMult*weaponMult;
   popup(t.x,t.y-40,"+"+pts+(labelMult>1?" ×"+labelMult:""), weapon==="wax" ? "#e6a925" : T.color, big || weapon==="wax");
   dust(t.x,t.y,big?12:8,big?130:90);
-  // Round 2: graffiti spray-paint splash instead of plain dust
-  if(TOURNAMENT.phase==="round2"){
-    graffitiSplash(t.x, t.y, TYPES[t.type].color);
-  }
+  // Blitz round: extra graffiti splash on every hit
+  if(TOURNAMENT.phase==="round2") graffitiSplash(t.x, t.y, TYPES[t.type].color);
   if(!fromShrapnel){
     G.shake=Math.min(G.shake+(big?5:2.4),8);
     G.hitstop=big?0.045:0.02;
@@ -1079,8 +948,6 @@ function start(){
   }
 
   reset(); G.mode="play";
-  // Round 2 initialises its own column system instead of normal targets
-  if(TOURNAMENT.phase==="round2") initRound2();
   startOverlay.classList.add("hidden"); endOverlay.classList.add("hidden");
   // Hide the mobile instruction box once play begins
   document.getElementById("instructionBox")?.classList.add("hidden");
@@ -1164,27 +1031,14 @@ function update(dt){
   // Ambient juice (birds + leaves) — round 1 only
   updateJuice(dt);
 
-  // Round 2 column logic — replaces normal target spawning
-  if(TOURNAMENT.phase==="round2"){
-    updateRound2Columns(dt);
-    // Particles still need updating
-    for(let i=G.particles.length-1;i>=0;i--){
-      const p=G.particles[i]; p.age+=dt;
-      p.x+=p.vx*dt; p.y+=p.vy*dt;
-      if(p.spray && p.drip) p.vy+=60*dt; // drips fall with gravity
-      if(p.age>=p.life) G.particles.splice(i,1);
-    }
-    for(let i=G.popups.length-1;i>=0;i--){
-      const p=G.popups[i]; p.age+=dt;
-      p.y-=28*dt;
-      if(p.age>=p.life) G.popups.splice(i,1);
-    }
-    return; // skip normal target spawning/lifecycle
-  }
-
-  // spawning
+  // spawning — blitz mode uses same system but more targets, faster rate
+  const maxT  = TOURNAMENT.phase==="round2" ? BLITZ_MAX_TARGETS : 10;
+  const intFn = TOURNAMENT.phase==="round2" ? blitzSpawnInterval : spawnInterval;
   G.spawnTimer-=dt;
-  if((!NET.room||NET.isHost) && G.spawnTimer<=0 && G.targets.length<10){ spawnTarget(false); G.spawnTimer=spawnInterval(); }
+  if((!NET.room||NET.isHost) && G.spawnTimer<=0 && G.targets.length<maxT){
+    spawnTarget(false);
+    G.spawnTimer = intFn();
+  }
 
   // target lifecycle: flip up -> stand -> blink warning -> fold down -> remove
   for(let i=G.targets.length-1;i>=0;i--){
@@ -1320,17 +1174,15 @@ function advanceTournament(){
   const ov = document.getElementById("betweenRoundOverlay");
   if(ov) ov.classList.add("hidden");
 
-  TOURNAMENT.phase     = "round2";   // set BEFORE start() runs
+  TOURNAMENT.phase     = "round2";
   TOURNAMENT.myReady   = false;
   TOURNAMENT.oppoReady = false;
 
-  // Use NET.starting flag so start() knows this is a controlled
-  // tournament advance — not a solo restart — and keeps the room alive.
   NET.starting = true;
   reset();
-  G.mode = "play";
-  if(TOURNAMENT.phase==="round2") initRound2();
-  // Update UI directly — no intermediate lobby screen between rounds
+  // Blitz round: override the session timer to 20 seconds
+  G.time   = BLITZ_TIME;
+  G.mode   = "play";
   startOverlay.classList.add("hidden");
   endOverlay.classList.add("hidden");
   hud.style.display = "flex";
@@ -1338,8 +1190,7 @@ function advanceTournament(){
   setDrone(true);
   beat();
   NET.starting = false;
-  // Announce round start
-  setTimeout(()=>{ announce("🎯 שלב 2 — דו-קרב טורים!"); }, 300);
+  setTimeout(()=>{ announce("⚡ בליץ! 20 שניות של כאוס!"); }, 300);
 }
 
 // Start the tournament from round1
@@ -1541,6 +1392,25 @@ function drawEntities(time){
 }
 
 function drawFx(){
+  // ── Blitz vignette: dark greenish edges to signal "round 2" atmosphere ──
+  if(TOURNAMENT.phase==="round2"){
+    const vg = ctx.createRadialGradient(
+      VIEW_W/2, VIEW_H/2, VIEW_H*0.28,
+      VIEW_W/2, VIEW_H/2, VIEW_H*0.82
+    );
+    vg.addColorStop(0, "rgba(0,0,0,0)");
+    vg.addColorStop(1, "rgba(0,40,15,0.72)");
+    ctx.fillStyle = vg;
+    ctx.fillRect(0, 0, VIEW_W, VIEW_H);
+    // Thin neon-green scan-line shimmer (3 horizontal bars, semi-transparent)
+    ctx.fillStyle = "rgba(57,255,20,0.03)";
+    const t = performance.now()/1000;
+    for(let i=0; i<3; i++){
+      const yy = ((t*38 + i*VIEW_H/3) % VIEW_H);
+      ctx.fillRect(0, yy, VIEW_W, 2);
+    }
+  }
+
   for(const p of G.particles){
     const sx = p.x - G.pan.x - (BG_W/2 - VIEW_W/2);
     const sy = p.y - G.pan.y - (BG_H/2 - VIEW_H/2);
@@ -1570,9 +1440,6 @@ function drawFx(){
 
   // Juice: birds and falling leaves (round1 only)
   drawJuice();
-
-  // Round 2 columns
-  if(TOURNAMENT.phase==="round2") drawR2Columns();
 
   drawProjectiles();
   for(const p of G.popups){
@@ -1645,47 +1512,6 @@ function drawJuice(){
 }
 
 // Draws round 2 column targets — both columns, all phases
-function drawR2Columns(){
-  if(!G.r2) return;
-  const time = performance.now()/1000;
-  for(const col of [G.r2.p1, G.r2.p2]){
-    for(const t of col){
-      if(t.phase==="idle"||t.phase==="done") continue;
-      // compute screen position
-      const sx = t.x - G.pan.x - (BG_W/2 - VIEW_W/2);
-      const sy = t.y - G.pan.y - (BG_H/2 - VIEW_H/2);
-      if(sx<-80||sx>VIEW_W+80||sy<-80||sy>VIEW_H+80) continue;
-
-      const prog = t.phase==="rising"   ? Math.min(1,t.age/R2_RISE_TIME)
-                 : t.phase==="falling"  ? 1-Math.min(1,t.age/R2_FALL_TIME)
-                 : 1; // active
-      const popScale = prog;
-
-      // Active glow ring
-      if(t.phase==="active"){
-        const pulse = 0.55 + 0.45*Math.sin(time*8);
-        ctx.save();
-        ctx.globalAlpha = 0.55*pulse;
-        ctx.strokeStyle = TYPES[t.type].color;
-        ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(sx, sy, t.r+8, 0, Math.PI*2); ctx.stroke();
-        ctx.restore();
-      }
-
-      drawGroundCrack(sx, sy, popScale);
-      ctx.save();
-      ctx.globalAlpha = t.phase==="active" ? 1 : 0.85;
-      ctx.translate(sx, sy);
-      ctx.scale(1, Math.max(0.04, popScale));
-      ctx.translate(-sx, -sy);
-      const proxy = {x:sx, y:sy, face:t.face, wob:t.wob, skin:t.skin, shirt:t.shirt};
-      if(t.type==="scooter") drawScooterKid(proxy, time);
-      else if(t.type==="bimba") drawBimbaKid(proxy, time);
-      else drawBMX(proxy, time);
-      ctx.restore();
-    }
-  }
-}
 
 
 // Tiny skateboard silhouette — deck + two trucks/wheel pairs — drawn with
